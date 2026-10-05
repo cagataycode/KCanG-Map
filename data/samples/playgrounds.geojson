@@ -1,0 +1,21 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "source_id": "pg1", "name": "Mitte Playground", "space_type": "Spielplatz" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[13.372, 52.524], [13.373, 52.524], [13.373, 52.5248], [13.372, 52.5248], [13.372, 52.524]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "source_id": "pg2", "name": "Kreuzberg Playground", "space_type": "Spielplatz" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[13.441, 52.499], [13.442, 52.499], [13.442, 52.4998], [13.441, 52.4998], [13.441, 52.499]]]
+      }
+    }
+  ]
+}

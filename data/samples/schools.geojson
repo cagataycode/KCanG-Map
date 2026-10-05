@@ -1,0 +1,30 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "source_id": "s1", "name": "Mitte School A", "school_type": "Grundschule" },
+      "geometry": { "type": "Point", "coordinates": [13.37, 52.525] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "source_id": "s2", "name": "Mitte School B", "school_type": "Gymnasium" },
+      "geometry": { "type": "Point", "coordinates": [13.405, 52.53] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "source_id": "s3", "name": "Kreuzberg School", "school_type": "Grundschule" },
+      "geometry": { "type": "Point", "coordinates": [13.44, 52.50] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "source_id": "s4", "name": "Pankow School", "school_type": "Sekundarschule" },
+      "geometry": { "type": "Point", "coordinates": [13.46, 52.56] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "source_id": "s5", "name": "Far Mitte School", "school_type": "Grundschule" },
+      "geometry": { "type": "Point", "coordinates": [13.415, 52.535] }
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "official_id": "01", "name": "Mitte" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[13.35, 52.51], [13.42, 52.51], [13.42, 52.54], [13.35, 52.54], [13.35, 52.51]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "official_id": "02", "name": "Friedrichshain-Kreuzberg" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[13.42, 52.49], [13.48, 52.49], [13.48, 52.52], [13.42, 52.52], [13.42, 52.49]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "official_id": "03", "name": "Pankow" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[13.40, 52.54], [13.48, 52.54], [13.48, 52.58], [13.40, 52.58], [13.40, 52.54]]]
+      }
+    }
+  ]
+}
