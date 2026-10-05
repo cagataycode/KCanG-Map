@@ -1,0 +1,17 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+frontend/dist/
+data/raw/
+data/cache/
+!data/cache/.gitkeep
+*.gpkg
+!data/samples/.gitkeep
+
+.DS_Store
