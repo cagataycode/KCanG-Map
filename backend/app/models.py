@@ -34,6 +34,17 @@ class District(Base):
     geom = mapped_column(Geometry(geometry_type="MULTIPOLYGON", srid=25833), nullable=False)
 
 
+class Neighborhood(Base):
+    __tablename__ = "neighborhoods"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    official_id: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
+    district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    geom = mapped_column(Geometry(geometry_type="MULTIPOLYGON", srid=25833), nullable=False)
+
+
 class GreenSpace(Base):
     __tablename__ = "green_spaces"
 
@@ -113,6 +124,42 @@ class BathingWater(Base):
     source_id: Mapped[str | None] = mapped_column(String(128))
     name: Mapped[str | None] = mapped_column(String(255))
     quality_rating: Mapped[str | None] = mapped_column(String(128))
+    catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
+    district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)
+
+
+class Toilet(Base):
+    __tablename__ = "toilets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[str | None] = mapped_column(String(128))
+    name: Mapped[str | None] = mapped_column(String(255))
+    facility_type: Mapped[str | None] = mapped_column(String(128))
+    catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
+    district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)
+
+
+class Playground(Base):
+    __tablename__ = "playgrounds"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[str | None] = mapped_column(String(128))
+    name: Mapped[str | None] = mapped_column(String(255))
+    space_type: Mapped[str | None] = mapped_column(String(128))
+    catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
+    district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    geom = mapped_column(Geometry(geometry_type="MULTIPOLYGON", srid=25833), nullable=False)
+
+
+class SportsFacility(Base):
+    __tablename__ = "sports_facilities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[str | None] = mapped_column(String(128))
+    name: Mapped[str | None] = mapped_column(String(255))
+    facility_type: Mapped[str | None] = mapped_column(String(128))
     catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
     district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
     geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)

@@ -36,6 +36,24 @@ nearest_bathing AS (
   ORDER BY w.geom <-> pt.geom
   LIMIT 1
 ),
+nearest_toilets AS (
+  SELECT 'toilets'::text AS layer, t.id, t.name, ST_Distance(t.geom, pt.geom) AS distance_m
+  FROM toilets t, pt
+  ORDER BY t.geom <-> pt.geom
+  LIMIT 1
+),
+nearest_playgrounds AS (
+  SELECT 'playgrounds'::text AS layer, p.id, p.name, ST_Distance(p.geom, pt.geom) AS distance_m
+  FROM playgrounds p, pt
+  ORDER BY p.geom <-> pt.geom
+  LIMIT 1
+),
+nearest_sports AS (
+  SELECT 'sports_facilities'::text AS layer, s.id, s.name, ST_Distance(s.geom, pt.geom) AS distance_m
+  FROM sports_facilities s, pt
+  ORDER BY s.geom <-> pt.geom
+  LIMIT 1
+),
 nearest_green AS (
   SELECT 'green_spaces'::text AS layer, g.id, g.name, ST_Distance(g.geom, pt.geom) AS distance_m
   FROM green_spaces g, pt
@@ -48,6 +66,9 @@ nearest AS (
   UNION ALL SELECT * FROM nearest_ev
   UNION ALL SELECT * FROM nearest_fountains
   UNION ALL SELECT * FROM nearest_bathing
+  UNION ALL SELECT * FROM nearest_toilets
+  UNION ALL SELECT * FROM nearest_playgrounds
+  UNION ALL SELECT * FROM nearest_sports
   UNION ALL SELECT * FROM nearest_green
 )
 SELECT jsonb_build_object(

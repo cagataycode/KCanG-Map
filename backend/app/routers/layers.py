@@ -15,6 +15,7 @@ router = APIRouter(tags=["layers"])
 
 LAYER_TABLES = {
     "districts": "districts",
+    "neighborhoods": "neighborhoods",
     "green_spaces": "green_spaces",
     "schools": "schools",
     "trees": "trees",
@@ -22,6 +23,9 @@ LAYER_TABLES = {
     "ev_chargers": "ev_chargers",
     "drinking_fountains": "drinking_fountains",
     "bathing_waters": "bathing_waters",
+    "toilets": "toilets",
+    "playgrounds": "playgrounds",
+    "sports_facilities": "sports_facilities",
 }
 
 
@@ -51,45 +55,15 @@ def get_districts(
     bbox: str | None = Query(None, description="minLon,minLat,maxLon,maxLat"),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    payload = _geojson(db, "districts_geojson.sql", bbox=bbox)
-    # #region agent log
-    try:
-        from time import time
+    return _geojson(db, "districts_geojson.sql", bbox=bbox)
 
-        from app.main import _write_debug
 
-        feats = payload.get("features") or []
-        samples = []
-        for f in feats[:3]:
-            g = f.get("geometry") or {}
-            coords = g.get("coordinates") or []
-            ring = (
-                coords[0][0]
-                if g.get("type") == "MultiPolygon" and coords
-                else (coords[0] if coords else [])
-            )
-            samples.append(
-                {
-                    "name": (f.get("properties") or {}).get("name"),
-                    "type": g.get("type"),
-                    "ringPts": len(ring) if isinstance(ring, list) else 0,
-                }
-            )
-        _write_debug(
-            {
-                "sessionId": "fdc9ac",
-                "runId": "pre-fix",
-                "hypothesisId": "B",
-                "location": "layers.py:get_districts",
-                "message": "districts response built",
-                "data": {"featureCount": len(feats), "bbox": bbox, "samples": samples},
-                "timestamp": int(time() * 1000),
-            }
-        )
-    except Exception:
-        pass
-    # #endregion
-    return payload
+@router.get("/neighborhoods")
+def get_neighborhoods(
+    bbox: str | None = Query(None, description="minLon,minLat,maxLon,maxLat"),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return _geojson(db, "neighborhoods_geojson.sql", bbox=bbox)
 
 
 @router.get("/green-spaces")
@@ -160,6 +134,33 @@ def get_bathing_waters(
     return _geojson(db, "bathing_waters_geojson.sql", bbox=bbox, district_id=district_id)
 
 
+@router.get("/toilets")
+def get_toilets(
+    bbox: str | None = Query(None),
+    district_id: int | None = None,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return _geojson(db, "toilets_geojson.sql", bbox=bbox, district_id=district_id)
+
+
+@router.get("/playgrounds")
+def get_playgrounds(
+    bbox: str | None = Query(None),
+    district_id: int | None = None,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return _geojson(db, "playgrounds_geojson.sql", bbox=bbox, district_id=district_id)
+
+
+@router.get("/sports-facilities")
+def get_sports_facilities(
+    bbox: str | None = Query(None),
+    district_id: int | None = None,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return _geojson(db, "sports_facilities_geojson.sql", bbox=bbox, district_id=district_id)
+
+
 @router.get("/districts/list")
 def list_district_names(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
     rows = db.query(District).order_by(District.name).all()
@@ -200,5 +201,8 @@ def _geojson(
         params["district_id"] = district_id
     row = db.execute(text(sql), params).scalar()
     if row is None:
-        return {"type": "FeatureCollection", "features": []}
-    return row if isinstance(row, dict) else json.loads(row)
+        payload: dict[str, Any] = {"type": "FeatureCollection", "features": []}
+    else:
+        payload = row if isinstance(row, dict) else json.loads(row)
+    payload["sql_ref"] = sql_name
+    return payload

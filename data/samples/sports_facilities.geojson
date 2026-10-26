@@ -1,0 +1,15 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "source_id": "sp1", "name": "Sportanlage Friedrichshain", "facility_type": "sports" },
+      "geometry": { "type": "Point", "coordinates": [13.45, 52.515] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "source_id": "sp2", "name": "Sportanlage Wedding", "facility_type": "sports" },
+      "geometry": { "type": "Point", "coordinates": [13.36, 52.55] }
+    }
+  ]
+}

@@ -32,6 +32,9 @@ def nearest_amenities(
             "ev_chargers",
             "drinking_fountains",
             "bathing_waters",
+            "toilets",
+            "playgrounds",
+            "sports_facilities",
             "green_spaces",
         ],
         "operation": (
@@ -44,6 +47,7 @@ def nearest_amenities(
             "Mapped open-data inventories only. Distances are Euclidean in EPSG:25833, "
             "not walking or routing distance."
         ),
+        "sql_ref": "analysis_nearest_amenities.sql",
         **payload,
     }
 
@@ -61,14 +65,18 @@ def amenity_density_by_borough(db: Session = Depends(get_db)) -> dict[str, Any]:
             "ev_chargers",
             "drinking_fountains",
             "bathing_waters",
+            "toilets",
+            "playgrounds",
+            "sports_facilities",
         ],
-        "operation": "COUNT features per district_id for each point amenity layer",
+        "operation": "COUNT features per district_id for each amenity layer",
         "units": {"count": "features"},
         "crs": "EPSG:25833",
         "caveat": (
             "Mapped inventory counts assigned by point-in-polygon at import — "
             "not a service-need ranking."
         ),
+        "sql_ref": "analysis_amenity_density_by_borough.sql",
         "results": [dict(r) for r in rows],
     }
 
@@ -84,6 +92,7 @@ def green_by_borough(db: Session = Depends(get_db)) -> dict[str, Any]:
         "units": {"count": "features", "area": "m²", "share": "% of district land area"},
         "crs": "EPSG:25833",
         "caveat": "Mapped public green inventory coverage — not planning need or private greenery.",
+        "sql_ref": "analysis_green_by_borough.sql",
         "results": [dict(r) for r in rows],
     }
 
@@ -114,5 +123,6 @@ def school_green_proximity(
         "crs": "EPSG:25833",
         "threshold_m": threshold_m,
         "caveat": "Euclidean proximity to mapped green inventory only — not walking distance.",
+        "sql_ref": "analysis_school_green_proximity.sql",
         "results": [dict(r) for r in rows],
     }

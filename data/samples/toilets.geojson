@@ -1,0 +1,15 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "source_id": "t1", "name": "WC-Center Alexanderplatz", "facility_type": "WC-Center" },
+      "geometry": { "type": "Point", "coordinates": [13.413, 52.521] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "source_id": "t2", "name": "Berliner Toilette Kudamm", "facility_type": "Berliner Toilette" },
+      "geometry": { "type": "Point", "coordinates": [13.332, 52.504] }
+    }
+  ]
+}
