@@ -27,7 +27,8 @@ alembic upgrade head
 python -m scripts.import_layers                 # Berlin open data → PostGIS (default)
 # python -m scripts.import_layers --source samples  # tiny offline fixtures only
 # Skip street trees for a faster first open-data import:
-# python -m scripts.import_layers --layers districts,green_spaces,schools,bike_parking,ev_chargers,drinking_fountains,bathing_waters
+# python -m scripts.import_layers --layers districts,green_spaces,schools,bike_parking,ev_chargers,drinking_fountains,bathing_waters,toilets,playgrounds,sports_facilities
+# (omit trees for a quick smoke run — full street-tree import is large)
 
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
@@ -70,4 +71,4 @@ cd backend && source .venv/bin/activate
 pytest -q
 ```
 
-Visible SQL: [backend/sql/](backend/sql/). Smoke checklist: [docs/smoke-test.md](docs/smoke-test.md).
+Visible SQL: [backend/sql/](backend/sql/) — also inspect and run SELECT queries in the app sidebar (SQL panel / playground). Smoke checklist: [docs/smoke-test.md](docs/smoke-test.md).
