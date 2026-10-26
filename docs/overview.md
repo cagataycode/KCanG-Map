@@ -2,7 +2,7 @@
 
 **Berlin Amenities Map** — PostGIS learning app that maps public amenity inventories from Berlin open data.
 
-Click the map to see the nearest park, street tree, bike rack, EV charger, drinking fountain, and bathing site (planar distance in EPSG:25833). Compare amenity counts and green cover by borough.
+Click the map to see the nearest park, playground, street tree, bike rack, EV charger, drinking fountain, toilet, sports site, and bathing water (planar distance in EPSG:25833). Compare amenity counts and green cover by borough.
 
 ## Tech stack
 
