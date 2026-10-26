@@ -1,7 +1,7 @@
-# Berlin Cannabis Zone Map — docs
+# Berlin Amenities Map — docs
 
 **Stack:** FastAPI · SQLAlchemy/GeoAlchemy2 · PostGIS · Vite/MapLibre  
-**Focus:** mapped [§ 5 KCanG](https://www.gesetze-im-internet.de/kcang/__5.html) public-consumption restriction buffers (not legal advice).
+**Focus:** mapped Berlin open-data amenities — parks, street trees, bike parking, EV chargers, drinking fountains, bathing waters.
 
 1. [Overview](docs/overview.md)
 2. [MVP scope](docs/mvp-scope.md)

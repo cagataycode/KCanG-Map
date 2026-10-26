@@ -1,26 +1,21 @@
 # Technical requirements
 
-**Product:** Berlin Cannabis Zone Map — mapped KCanG § 5 buffers via PostGIS.
+**Product:** Berlin Amenities Map — PostGIS amenity explorer.
 
 **Stack:** FastAPI · SQLAlchemy/GeoAlchemy2 · PostGIS · Vite/MapLibre. Browser → API only. Analysis SQL in `backend/sql/`.
 
 ## Data layer
 
-- Tables: `districts`, `schools`, `playgrounds`, `kitas`, `sports_facilities`, `green_spaces` (context), `restriction_buffers`, `dataset_catalog`.
-- Buffers: `ST_Buffer(geom, 100)` in EPSG:25833; GiST on facility + buffer geoms.
-- Imports transactional; rebuild buffers after facility load.
+- Tables: `districts`, `green_spaces`, `schools`, `trees`, `bike_parking`, `ev_chargers`, `drinking_fountains`, `bathing_waters`, `dataset_catalog`.
+- GiST on facility geoms (EPSG:25833).
+- Imports transactional; `--layers` can skip heavy layers (e.g. trees) for smoke runs.
 - Parameterized SQL only.
+- `GET /trees` requires `bbox` and/or `district_id`.
 
 ## Acceptance
 
-- Import schools + playgrounds + kitas + sports; buffers present.
-- `GET /analyses/consumption-check` returns verdict + nearest facilities.
-- Borough coverage analysis returns % mapped buffer area.
-- UI: click map, show disclaimer, toggle buffer/facility layers.
-- Fixture for 100 m buffer distance; no client DB secrets.
-
-## Verdict semantics
-
-- `likely_restricted` — point within a mapped 100 m buffer
-- `outside_mapped_buffers` — outside known buffers (still not a legal permit)
-- `unknown` — missing data / query failure
+- Import samples (or open WFS) for amenity layers; ban/buffer tables absent.
+- `GET /analyses/nearest-amenities` returns nearest hit per layer + distances.
+- Amenity density and green-by-borough analyses return borough rows.
+- UI: click map, toggle amenity layers, show provenance.
+- Spatial fixture for KNN / metric distance; no client DB secrets.

@@ -1,12 +1,11 @@
-# Smoke-test checklist
+# Smoke test
 
-1. `docker compose up -d` — PostGIS healthy.
-2. `cd backend && alembic upgrade head` — migrations apply through `0003_kcang`.
-3. `python -m scripts.import_layers --source samples` — districts + green + schools + playgrounds + kitas + sports + `restriction_buffers`.
-4. `uvicorn app.main:app --reload` — `GET /health` returns PostGIS version.
-5. Layer GeoJSON: `/districts`, `/schools`, `/playgrounds`, `/kitas`, `/sports-facilities`, `/restriction-buffers`.
-6. `GET /analyses/consumption-check?lon=13.37&lat=52.525` → `likely_restricted` (sample school).
-7. `GET /analyses/consumption-check?lon=13.36&lat=52.515` → `outside_mapped_buffers` (away from sample seeds).
-8. `GET /analyses/restriction-coverage` returns borough `%` with caveats.
-9. Frontend: buffer layer, facility toggles, map click check panel, persistent disclaimer.
-10. Empty DB: API returns empty FeatureCollections / unknown status without crashing.
+1. `alembic upgrade head`
+2. `python -m scripts.import_layers --source samples`
+3. `GET /health` → ok + PostGIS
+4. `GET /layers` lists amenity catalog slugs (no restriction buffers)
+5. `GET /bike-parking` / `/ev-chargers` / `/drinking-fountains` / `/bathing-waters` return FeatureCollections
+6. `GET /trees` without bbox/district → 400; with bbox → features
+7. `GET /analyses/nearest-amenities?lon=13.405&lat=52.52` → `nearest` array with distances
+8. `GET /analyses/amenity-density-by-borough` → 12 (or sample) borough rows
+9. UI: click map → nearest panel; sidebar density table populates
