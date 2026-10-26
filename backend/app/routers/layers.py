@@ -17,10 +17,11 @@ LAYER_TABLES = {
     "districts": "districts",
     "green_spaces": "green_spaces",
     "schools": "schools",
-    "playgrounds": "playgrounds",
-    "kitas": "kitas",
-    "sports_facilities": "sports_facilities",
-    "restriction_buffers": "restriction_buffers",
+    "trees": "trees",
+    "bike_parking": "bike_parking",
+    "ev_chargers": "ev_chargers",
+    "drinking_fountains": "drinking_fountains",
+    "bathing_waters": "bathing_waters",
 }
 
 
@@ -50,7 +51,45 @@ def get_districts(
     bbox: str | None = Query(None, description="minLon,minLat,maxLon,maxLat"),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    return _geojson(db, "districts_geojson.sql", bbox=bbox)
+    payload = _geojson(db, "districts_geojson.sql", bbox=bbox)
+    # #region agent log
+    try:
+        from time import time
+
+        from app.main import _write_debug
+
+        feats = payload.get("features") or []
+        samples = []
+        for f in feats[:3]:
+            g = f.get("geometry") or {}
+            coords = g.get("coordinates") or []
+            ring = (
+                coords[0][0]
+                if g.get("type") == "MultiPolygon" and coords
+                else (coords[0] if coords else [])
+            )
+            samples.append(
+                {
+                    "name": (f.get("properties") or {}).get("name"),
+                    "type": g.get("type"),
+                    "ringPts": len(ring) if isinstance(ring, list) else 0,
+                }
+            )
+        _write_debug(
+            {
+                "sessionId": "fdc9ac",
+                "runId": "pre-fix",
+                "hypothesisId": "B",
+                "location": "layers.py:get_districts",
+                "message": "districts response built",
+                "data": {"featureCount": len(feats), "bbox": bbox, "samples": samples},
+                "timestamp": int(time() * 1000),
+            }
+        )
+    except Exception:
+        pass
+    # #endregion
+    return payload
 
 
 @router.get("/green-spaces")
@@ -71,40 +110,54 @@ def get_schools(
     return _geojson(db, "schools_geojson.sql", bbox=bbox, district_id=district_id)
 
 
-@router.get("/playgrounds")
-def get_playgrounds(
+@router.get("/trees")
+def get_trees(
     bbox: str | None = Query(None),
     district_id: int | None = None,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    return _geojson(db, "playgrounds_geojson.sql", bbox=bbox, district_id=district_id)
+    if bbox is None and district_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="trees requires bbox and/or district_id (citywide dump blocked)",
+        )
+    return _geojson(db, "trees_geojson.sql", bbox=bbox, district_id=district_id)
 
 
-@router.get("/kitas")
-def get_kitas(
+@router.get("/bike-parking")
+def get_bike_parking(
     bbox: str | None = Query(None),
     district_id: int | None = None,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    return _geojson(db, "kitas_geojson.sql", bbox=bbox, district_id=district_id)
+    return _geojson(db, "bike_parking_geojson.sql", bbox=bbox, district_id=district_id)
 
 
-@router.get("/sports-facilities")
-def get_sports_facilities(
+@router.get("/ev-chargers")
+def get_ev_chargers(
     bbox: str | None = Query(None),
     district_id: int | None = None,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    return _geojson(db, "sports_facilities_geojson.sql", bbox=bbox, district_id=district_id)
+    return _geojson(db, "ev_chargers_geojson.sql", bbox=bbox, district_id=district_id)
 
 
-@router.get("/restriction-buffers")
-def get_restriction_buffers(
+@router.get("/drinking-fountains")
+def get_drinking_fountains(
     bbox: str | None = Query(None),
     district_id: int | None = None,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    return _geojson(db, "restriction_buffers_geojson.sql", bbox=bbox, district_id=district_id)
+    return _geojson(db, "drinking_fountains_geojson.sql", bbox=bbox, district_id=district_id)
+
+
+@router.get("/bathing-waters")
+def get_bathing_waters(
+    bbox: str | None = Query(None),
+    district_id: int | None = None,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return _geojson(db, "bathing_waters_geojson.sql", bbox=bbox, district_id=district_id)
 
 
 @router.get("/districts/list")

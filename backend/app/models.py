@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from geoalchemy2 import Geometry
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
 
@@ -58,20 +58,20 @@ class School(Base):
     geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)
 
 
-class Playground(Base):
-    __tablename__ = "playgrounds"
+class Tree(Base):
+    __tablename__ = "trees"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     source_id: Mapped[str | None] = mapped_column(String(128))
     name: Mapped[str | None] = mapped_column(String(255))
-    space_type: Mapped[str | None] = mapped_column(String(128))
+    species: Mapped[str | None] = mapped_column(String(128))
     catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
     district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
-    geom = mapped_column(Geometry(geometry_type="MULTIPOLYGON", srid=25833), nullable=False)
+    geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)
 
 
-class Kita(Base):
-    __tablename__ = "kitas"
+class BikeParking(Base):
+    __tablename__ = "bike_parking"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     source_id: Mapped[str | None] = mapped_column(String(128))
@@ -82,26 +82,37 @@ class Kita(Base):
     geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)
 
 
-class SportsFacility(Base):
-    __tablename__ = "sports_facilities"
+class EvCharger(Base):
+    __tablename__ = "ev_chargers"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     source_id: Mapped[str | None] = mapped_column(String(128))
     name: Mapped[str | None] = mapped_column(String(255))
-    facility_type: Mapped[str | None] = mapped_column(String(128))
+    charger_type: Mapped[str | None] = mapped_column(String(128))
     catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
     district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
     geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)
 
 
-class RestrictionBuffer(Base):
-    __tablename__ = "restriction_buffers"
+class DrinkingFountain(Base):
+    __tablename__ = "drinking_fountains"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    rule_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    source_table: Mapped[str] = mapped_column(String(64), nullable=False)
     source_id: Mapped[str | None] = mapped_column(String(128))
     name: Mapped[str | None] = mapped_column(String(255))
+    fountain_type: Mapped[str | None] = mapped_column(String(128))
+    catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
     district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
-    buffer_m: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
-    geom = mapped_column(Geometry(geometry_type="MULTIPOLYGON", srid=25833), nullable=False)
+    geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)
+
+
+class BathingWater(Base):
+    __tablename__ = "bathing_waters"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[str | None] = mapped_column(String(128))
+    name: Mapped[str | None] = mapped_column(String(255))
+    quality_rating: Mapped[str | None] = mapped_column(String(128))
+    catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
+    district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)

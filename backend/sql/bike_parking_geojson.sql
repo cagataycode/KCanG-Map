@@ -1,4 +1,5 @@
--- Bbox GeoJSON for playgrounds.
+-- Bbox GeoJSON for bike parking.
+-- Params: :minx, :miny, :maxx, :maxy, :district_id
 SELECT jsonb_build_object(
   'type', 'FeatureCollection',
   'features', COALESCE(jsonb_agg(feature), '[]'::jsonb)
@@ -6,22 +7,22 @@ SELECT jsonb_build_object(
 FROM (
   SELECT jsonb_build_object(
     'type', 'Feature',
-    'id', p.id,
-    'geometry', ST_AsGeoJSON(ST_Transform(p.geom, 4326))::jsonb,
+    'id', b.id,
+    'geometry', ST_AsGeoJSON(ST_Transform(b.geom, 4326))::jsonb,
     'properties', jsonb_build_object(
-      'id', p.id,
-      'name', p.name,
-      'space_type', p.space_type,
-      'district_id', p.district_id,
-      'layer', 'playgrounds',
-      'catalog_id', p.catalog_id
+      'id', b.id,
+      'name', b.name,
+      'facility_type', b.facility_type,
+      'district_id', b.district_id,
+      'layer', 'bike_parking',
+      'catalog_id', b.catalog_id
     )
   ) AS feature
-  FROM playgrounds p
-  WHERE (CAST(:district_id AS integer) IS NULL OR p.district_id = CAST(:district_id AS integer))
+  FROM bike_parking b
+  WHERE (CAST(:district_id AS integer) IS NULL OR b.district_id = CAST(:district_id AS integer))
     AND (
       CAST(:minx AS double precision) IS NULL
-      OR p.geom && ST_Transform(
+      OR b.geom && ST_Transform(
            ST_MakeEnvelope(
              CAST(:minx AS double precision),
              CAST(:miny AS double precision),

@@ -12,52 +12,62 @@ from app.sql_loader import load_sql
 router = APIRouter(prefix="/analyses", tags=["analyses"])
 
 
-@router.get("/consumption-check")
-def consumption_check(
+@router.get("/nearest-amenities")
+def nearest_amenities(
     lon: float = Query(..., ge=-180, le=180),
     lat: float = Query(..., ge=-90, le=90),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     row = db.execute(
-        text(load_sql("analysis_consumption_check.sql")),
+        text(load_sql("analysis_nearest_amenities.sql")),
         {"lon": lon, "lat": lat},
     ).scalar()
     payload = row if isinstance(row, dict) else {}
     return {
-        "id": "consumption-check",
-        "title": "KCanG mapped restriction check",
-        "inputs": ["restriction_buffers"],
+        "id": "nearest-amenities",
+        "title": "Nearest amenities",
+        "inputs": [
+            "trees",
+            "bike_parking",
+            "ev_chargers",
+            "drinking_fountains",
+            "bathing_waters",
+            "green_spaces",
+        ],
         "operation": (
-            "Transform WGS84 point to EPSG:25833; ST_Intersects against 100 m "
-            "facility buffers; report nearest buffers"
+            "Transform WGS84 point to EPSG:25833; KNN (<->) nearest feature per amenity layer; "
+            "return planar distance in metres"
         ),
         "units": {"distance": "metres"},
         "crs": "EPSG:25833",
         "caveat": (
-            "Mapped restriction coverage only — not legal advice. "
-            "100 m buffer uses facility geometry as a proxy for Eingangsbereich. "
-            "outside_mapped_buffers does not mean consumption is allowed."
+            "Mapped open-data inventories only. Distances are Euclidean in EPSG:25833, "
+            "not walking or routing distance."
         ),
         **payload,
     }
 
 
-@router.get("/restriction-coverage")
-def restriction_coverage(db: Session = Depends(get_db)) -> dict[str, Any]:
-    rows = db.execute(text(load_sql("analysis_restriction_coverage.sql"))).mappings().all()
+@router.get("/amenity-density-by-borough")
+def amenity_density_by_borough(db: Session = Depends(get_db)) -> dict[str, Any]:
+    rows = db.execute(text(load_sql("analysis_amenity_density_by_borough.sql"))).mappings().all()
     return {
-        "id": "restriction-coverage",
-        "title": "Mapped KCanG buffer coverage by borough",
-        "inputs": ["districts", "restriction_union"],
-        "operation": (
-            "ST_Area(ST_Intersection(district, buffer union)) / ST_Area(district) "
-            "in EPSG:25833"
-        ),
-        "units": {"area": "m²", "share": "% of district land area"},
+        "id": "amenity-density-by-borough",
+        "title": "Amenity counts by borough",
+        "inputs": [
+            "districts",
+            "trees",
+            "bike_parking",
+            "ev_chargers",
+            "drinking_fountains",
+            "bathing_waters",
+        ],
+        "operation": "COUNT features per district_id for each point amenity layer",
+        "units": {"count": "features"},
         "crs": "EPSG:25833",
         "caveat": (
-            "Share of borough land intersecting mapped 100 m buffers — "
-            "mapped restriction density, not a 'safest borough' ranking."
+            "Mapped inventory counts assigned by point-in-polygon at import — "
+            "not a service-need ranking."
         ),
         "results": [dict(r) for r in rows],
     }
@@ -68,15 +78,12 @@ def green_by_borough(db: Session = Depends(get_db)) -> dict[str, Any]:
     rows = db.execute(text(load_sql("analysis_green_by_borough.sql"))).mappings().all()
     return {
         "id": "green-by-borough",
-        "title": "Mapped public green by borough (context)",
+        "title": "Mapped public green by borough",
         "inputs": ["districts", "green_spaces"],
         "operation": "COUNT features and SUM ST_Area(geom) per district_id (EPSG:25833)",
         "units": {"count": "features", "area": "m²", "share": "% of district land area"},
         "crs": "EPSG:25833",
-        "caveat": (
-            "Context layer only. Parks are not a § 5 blanket ban. "
-            "Mapped public green inventory coverage — not planning need."
-        ),
+        "caveat": "Mapped public green inventory coverage — not planning need or private greenery.",
         "results": [dict(r) for r in rows],
     }
 
@@ -97,7 +104,7 @@ def school_green_proximity(
     )
     return {
         "id": "school-green-proximity",
-        "title": "School-to-green proximity (mapped, secondary)",
+        "title": "School-to-green proximity",
         "inputs": ["schools", "green_spaces"],
         "operation": (
             "Shortest planar ST_Distance from each school point to nearest green polygon edge; "
@@ -106,8 +113,6 @@ def school_green_proximity(
         "units": {"distance": "metres"},
         "crs": "EPSG:25833",
         "threshold_m": threshold_m,
-        "caveat": (
-            "Secondary context analysis. Euclidean proximity to mapped green inventory only."
-        ),
+        "caveat": "Euclidean proximity to mapped green inventory only — not walking distance.",
         "results": [dict(r) for r in rows],
     }
