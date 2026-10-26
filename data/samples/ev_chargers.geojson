@@ -1,0 +1,15 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "source_id": "e1", "name": "Grunerstraße 20", "charger_type": "AC" },
+      "geometry": { "type": "Point", "coordinates": [13.412, 52.519] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "source_id": "e2", "name": "Potsdamer Platz", "charger_type": "DC" },
+      "geometry": { "type": "Point", "coordinates": [13.376, 52.509] }
+    }
+  ]
+}

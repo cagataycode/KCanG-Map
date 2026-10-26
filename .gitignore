@@ -15,3 +15,4 @@ data/cache/
 !data/samples/.gitkeep
 
 .DS_Store
+.cursor/*

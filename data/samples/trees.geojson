@@ -1,0 +1,20 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "source_id": "t1", "name": "Winter-Linde", "species": "Tilia cordata" },
+      "geometry": { "type": "Point", "coordinates": [13.378, 52.516] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "source_id": "t2", "name": "Platane", "species": "Platanus x hispanica" },
+      "geometry": { "type": "Point", "coordinates": [13.405, 52.52] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "source_id": "t3", "name": "Ahorn", "species": "Acer platanoides" },
+      "geometry": { "type": "Point", "coordinates": [13.43, 52.505] }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "source_id": "b1", "name": "Alexanderplatz racks", "facility_type": "Anlehnbügel" },
+      "geometry": { "type": "Point", "coordinates": [13.413, 52.521] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "source_id": "b2", "name": "Kreuzberg racks", "facility_type": "Doppelstockparker" },
+      "geometry": { "type": "Point", "coordinates": [13.418, 52.499] }
+    }
+  ]
+}

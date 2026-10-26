@@ -1,0 +1,15 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "source_id": "w1", "name": "Strandbad Jungfernheide", "quality_rating": "Ausgezeichnet" },
+      "geometry": { "type": "Point", "coordinates": [13.29, 52.543] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "source_id": "w2", "name": "Wannsee sample site", "quality_rating": "Gut" },
+      "geometry": { "type": "Point", "coordinates": [13.17, 52.44] }
+    }
+  ]
+}

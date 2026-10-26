@@ -3,25 +3,28 @@ import maplibregl, { Map, LngLatBoundsLike, Marker } from "maplibre-gl";
 import {
   AnalysisResponse,
   BBox,
-  ConsumptionCheck,
   DistrictListItem,
   FeatureCollection,
   LayerMeta,
+  NearestAmenities,
   api,
   bboxContains,
   boundsToBbox,
+  clearApiCache,
+  dbg,
   formatBbox,
   padBbox,
 } from "./api";
 
 type Visibility = {
   districts: boolean;
-  restriction_buffers: boolean;
-  schools: boolean;
-  playgrounds: boolean;
-  kitas: boolean;
-  sports_facilities: boolean;
   green_spaces: boolean;
+  schools: boolean;
+  trees: boolean;
+  bike_parking: boolean;
+  ev_chargers: boolean;
+  drinking_fountains: boolean;
+  bathing_waters: boolean;
 };
 
 const LAYER_META: Record<
@@ -29,23 +32,28 @@ const LAYER_META: Record<
   { label: string; swatch: string; kind: "fill" | "dot" | "line" }
 > = {
   districts: { label: "Districts", swatch: "#1f4e79", kind: "line" },
-  restriction_buffers: { label: "100 m buffers", swatch: "#c45c5c", kind: "fill" },
+  green_spaces: { label: "Parks", swatch: "#1f8a5b", kind: "fill" },
   schools: { label: "Schools", swatch: "#c45c26", kind: "dot" },
-  playgrounds: { label: "Playgrounds", swatch: "#b8860b", kind: "dot" },
-  kitas: { label: "Kitas", swatch: "#5b4fc7", kind: "dot" },
-  sports_facilities: { label: "Sports", swatch: "#0f6a5a", kind: "dot" },
-  green_spaces: { label: "Parks (context)", swatch: "#1f8a5b", kind: "fill" },
+  trees: { label: "Street trees", swatch: "#2f6b3c", kind: "dot" },
+  bike_parking: { label: "Bike parking", swatch: "#0f6a5a", kind: "dot" },
+  ev_chargers: { label: "EV chargers", swatch: "#1a6fbf", kind: "dot" },
+  drinking_fountains: { label: "Drinking fountains", swatch: "#3a7ca5", kind: "dot" },
+  bathing_waters: { label: "Bathing waters", swatch: "#0b6e99", kind: "dot" },
+};
+
+const LAYER_LABELS: Record<string, string> = {
+  trees: "Street tree",
+  bike_parking: "Bike parking",
+  ev_chargers: "EV charger",
+  drinking_fountains: "Drinking fountain",
+  bathing_waters: "Bathing water",
+  green_spaces: "Park",
 };
 
 const BERLIN_CENTER: [number, number] = [13.405, 52.52];
 const BBOX_PAD = 0.6;
 const MOVE_DEBOUNCE_MS = 250;
-
-const DISCLAIMER_SHORT =
-  "Not legal advice · 100 m geometry buffers ≈ § 5 Sichtweite · incomplete data · minors & Fußgängerzonen unmapped";
-
-const DISCLAIMER =
-  "Not legal advice. 100 m buffers approximate § 5 KCanG Sichtweite from facility geometry (not surveyed entrances). Incomplete inventories; presence of minors cannot be mapped; Fußgängerzonen 07:00–20:00 are not modeled. Outside mapped buffers ≠ allowed.";
+const TREE_MIN_ZOOM = 14;
 
 export default function App() {
   const mapRef = useRef<Map | null>(null);
@@ -54,26 +62,28 @@ export default function App() {
   const loadedExtentRef = useRef<BBox | null>(null);
   const loadedDistrictRef = useRef<number | "">("");
   const loadSeqRef = useRef(0);
-  const coverageLoadedRef = useRef(false);
+  const densityLoadedRef = useRef(false);
 
   const [layers, setLayers] = useState<LayerMeta[]>([]);
   const [districts, setDistricts] = useState<DistrictListItem[]>([]);
   const [selectedDistrict, setSelectedDistrict] = useState<number | "">("");
   const [visibility, setVisibility] = useState<Visibility>({
     districts: true,
-    restriction_buffers: true,
-    schools: false,
-    playgrounds: false,
-    kitas: false,
-    sports_facilities: false,
     green_spaces: false,
+    schools: false,
+    trees: false,
+    bike_parking: true,
+    ev_chargers: true,
+    drinking_fountains: true,
+    bathing_waters: true,
   });
   const visibilityRef = useRef(visibility);
   visibilityRef.current = visibility;
   const [status, setStatus] = useState("Loading map…");
   const [error, setError] = useState<string | null>(null);
-  const [check, setCheck] = useState<ConsumptionCheck | null>(null);
-  const [coverage, setCoverage] = useState<AnalysisResponse | null>(null);
+  const [nearest, setNearest] = useState<NearestAmenities | null>(null);
+  const [density, setDensity] = useState<AnalysisResponse | null>(null);
+  const [greenBorough, setGreenBorough] = useState<AnalysisResponse | null>(null);
 
   useEffect(() => {
     if (!mapNode.current || mapRef.current) return;
@@ -96,27 +106,26 @@ export default function App() {
     });
     map.addControl(new maplibregl.NavigationControl(), "top-right");
     mapRef.current = map;
-    map.on("load", () => setStatus("Click the map to check a point"));
+    map.on("load", () => setStatus("Click the map to find nearby amenities"));
 
     const onClick = async (e: maplibregl.MapMouseEvent) => {
       const { lng, lat } = e.lngLat;
       if (markerRef.current) markerRef.current.remove();
-      markerRef.current = new maplibregl.Marker({ color: "#8a1c1c" }).setLngLat([lng, lat]).addTo(map);
+      markerRef.current = new maplibregl.Marker({ color: "#1f5c4d" }).setLngLat([lng, lat]).addTo(map);
       try {
         setError(null);
-        setStatus(`Checking ${lng.toFixed(5)}, ${lat.toFixed(5)}…`);
-        const result = await api.consumptionCheck(lng, lat);
-        setCheck(result);
+        setStatus(`Looking up ${lng.toFixed(5)}, ${lat.toFixed(5)}…`);
+        const result = await api.nearestAmenities(lng, lat);
+        setNearest(result);
+        const closest = result.nearest?.[0];
         setStatus(
-          result.status === "likely_restricted"
-            ? "Point is inside a mapped 100 m restriction buffer"
-            : result.status === "outside_mapped_buffers"
-              ? "Point is outside mapped buffers (not a legal clearance)"
-              : "No restriction buffers loaded"
+          closest
+            ? `Nearest: ${LAYER_LABELS[closest.layer] ?? closest.layer} at ${closest.distance_m.toFixed(0)} m`
+            : "No amenities loaded yet — run the import script"
         );
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Check failed");
-        setStatus("Check failed");
+        setError(err instanceof Error ? err.message : "Lookup failed");
+        setStatus("Lookup failed");
       }
     };
     map.on("click", onClick);
@@ -130,6 +139,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // Drop any in-memory GeoJSON left from a previous sample import.
+    clearApiCache();
     Promise.all([api.layers(), api.districtsList()])
       .then(([layerMeta, districtList]) => {
         setLayers(layerMeta);
@@ -158,11 +169,9 @@ export default function App() {
       const districtId = selectedDistrict === "" ? undefined : selectedDistrict;
       const viewport = boundsToBbox(map.getBounds());
 
-      // Borough mode: one fetch per district; pan does not refetch.
       if (districtId != null) {
         if (!force && loadedDistrictRef.current === selectedDistrict) return;
       } else {
-        // Citywide: only refetch when viewport leaves the last padded extent.
         if (
           !force &&
           loadedExtentRef.current &&
@@ -182,48 +191,63 @@ export default function App() {
         setError(null);
         setStatus("Loading layers…");
 
-        const [districtFc, bufferFc, schoolFc, playFc, kitaFc, sportFc, greenFc, cov] =
+        const treePromise =
+          districtId != null || (fetchBbox && map.getZoom() >= TREE_MIN_ZOOM - 1)
+            ? api.trees(fetchBbox, districtId)
+            : Promise.resolve({ type: "FeatureCollection", features: [] } as FeatureCollection);
+
+        const [districtFc, greenFc, schoolFc, treeFc, bikeFc, evFc, fountainFc, bathingFc, dens, green] =
           await Promise.all([
             api.districts(),
-            api.restrictionBuffers(fetchBbox, districtId),
-            api.schools(fetchBbox, districtId),
-            api.playgrounds(fetchBbox, districtId),
-            api.kitas(fetchBbox, districtId),
-            api.sportsFacilities(fetchBbox, districtId),
             api.greenSpaces(fetchBbox, districtId),
-            coverageLoadedRef.current
+            api.schools(fetchBbox, districtId),
+            treePromise,
+            api.bikeParking(fetchBbox, districtId),
+            api.evChargers(fetchBbox, districtId),
+            api.drinkingFountains(fetchBbox, districtId),
+            api.bathingWaters(fetchBbox, districtId),
+            densityLoadedRef.current
               ? Promise.resolve(null as AnalysisResponse | null)
-              : api.restrictionCoverage(),
+              : api.amenityDensityByBorough(),
+            densityLoadedRef.current
+              ? Promise.resolve(null as AnalysisResponse | null)
+              : api.greenByBorough(),
           ]);
 
         if (seq !== loadSeqRef.current) return;
 
-        if (cov) {
-          setCoverage(cov);
-          coverageLoadedRef.current = true;
+        // #region agent log
+        {
+          const ringLen = (fc: FeatureCollection) =>
+            fc.features.slice(0, 4).map((f) => {
+              const g = f.geometry;
+              const c = g.coordinates as unknown[][];
+              const ring =
+                g.type === "MultiPolygon" ? (c[0]?.[0] as unknown[]) : (c[0] as unknown[]);
+              return {
+                name: (f.properties?.name as string) ?? null,
+                type: g.type,
+                ringPts: Array.isArray(ring) ? ring.length : 0,
+              };
+            });
+          dbg("D", "App.tsx:loadLayers", "about to set map sources", {
+            visibility: { ...visibilityRef.current },
+            zoom: map.getZoom(),
+            districts: { n: districtFc.features.length, samples: ringLen(districtFc) },
+            green: { n: greenFc.features.length, samples: ringLen(greenFc) },
+            mapHasDistrictsSource: Boolean(map.getSource("districts")),
+            mapHasGreenSource: Boolean(map.getSource("green_spaces")),
+          });
         }
+        // #endregion
 
-        ensureSource(map, "districts", districtFc, {
-          type: "line",
-          paint: {
-            "line-color": "#1f3348",
-            "line-width": ["interpolate", ["linear"], ["zoom"], 9, 2.2, 13, 3.5] as never,
-            "line-opacity": 0.9,
-          },
-        });
-        // Soft fill + outline so overlaps do not become opaque mud.
-        ensureSource(map, "restriction_buffers", bufferFc, {
-          type: "fill",
-          paint: {
-            "fill-color": "#c45c5c",
-            "fill-opacity": ["interpolate", ["linear"], ["zoom"], 10, 0.08, 14, 0.16] as never,
-          },
-          outline: {
-            "line-color": "#9b2c2c",
-            "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.4, 14, 1.2] as never,
-            "line-opacity": 0.55,
-          },
-        });
+        if (dens) {
+          setDensity(dens);
+          densityLoadedRef.current = true;
+        }
+        if (green) setGreenBorough(green);
+
+        // Parks/fills first; borough outlines added last so they stay readable on top.
         ensureSource(map, "green_spaces", greenFc, {
           type: "fill",
           paint: {
@@ -233,16 +257,8 @@ export default function App() {
           outline: {
             "line-color": "#276749",
             "line-width": 0.8,
-            "line-opacity": 0.5,
+            "line-opacity": 0.45,
           },
-        });
-        ensureSource(map, "playgrounds", playFc, {
-          type: "fill",
-          paint: {
-            "fill-color": "#b8860b",
-            "fill-opacity": 0.35,
-          },
-          minzoom: 13,
         });
         ensureSource(map, "schools", schoolFc, {
           type: "circle",
@@ -255,36 +271,93 @@ export default function App() {
           },
           minzoom: 12,
         });
-        ensureSource(map, "kitas", kitaFc, {
+        ensureSource(map, "trees", treeFc, {
           type: "circle",
           paint: {
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 12, 3, 16, 7] as never,
-            "circle-color": "#5b4fc7",
-            "circle-stroke-width": 1,
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 14, 2, 17, 5] as never,
+            "circle-color": "#2f6b3c",
+            "circle-stroke-width": 0.5,
             "circle-stroke-color": "#fff",
-            "circle-opacity": 0.85,
+            "circle-opacity": 0.75,
           },
-          minzoom: 12,
+          minzoom: TREE_MIN_ZOOM,
         });
-        ensureSource(map, "sports_facilities", sportFc, {
+        ensureSource(map, "bike_parking", bikeFc, {
           type: "circle",
           paint: {
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 12, 3, 16, 7] as never,
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 3, 16, 7] as never,
             "circle-color": "#0f6a5a",
             "circle-stroke-width": 1,
             "circle-stroke-color": "#fff",
             "circle-opacity": 0.9,
           },
-          minzoom: 12,
+          minzoom: 11,
         });
+        ensureSource(map, "ev_chargers", evFc, {
+          type: "circle",
+          paint: {
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 3, 16, 7] as never,
+            "circle-color": "#1a6fbf",
+            "circle-stroke-width": 1,
+            "circle-stroke-color": "#fff",
+            "circle-opacity": 0.9,
+          },
+          minzoom: 11,
+        });
+        ensureSource(map, "drinking_fountains", fountainFc, {
+          type: "circle",
+          paint: {
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 4, 16, 8] as never,
+            "circle-color": "#3a7ca5",
+            "circle-stroke-width": 1,
+            "circle-stroke-color": "#fff",
+            "circle-opacity": 0.95,
+          },
+          minzoom: 11,
+        });
+        ensureSource(map, "bathing_waters", bathingFc, {
+          type: "circle",
+          paint: {
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 5, 14, 9] as never,
+            "circle-color": "#0b6e99",
+            "circle-stroke-width": 1.2,
+            "circle-stroke-color": "#fff",
+            "circle-opacity": 0.95,
+          },
+        });
+        ensureSource(map, "districts", districtFc, {
+          type: "line",
+          paint: {
+            "line-color": "#102a43",
+            "line-width": ["interpolate", ["linear"], ["zoom"], 9, 2.4, 13, 4] as never,
+            "line-opacity": 0.95,
+          },
+        });
+        if (map.getLayer("districts-line")) {
+          map.moveLayer("districts-line");
+        }
+
+        // #region agent log
+        dbg("F", "App.tsx:loadLayers", "layer order after moveLayer", {
+          runId: "post-fix",
+          layers: map.getStyle().layers?.map((l) => l.id) ?? [],
+          districtsRingPts: districtFc.features.slice(0, 3).map((f) => {
+            const g = f.geometry;
+            const c = g.coordinates as unknown[][];
+            const ring = g.type === "MultiPolygon" ? (c[0]?.[0] as unknown[]) : (c[0] as unknown[]);
+            return Array.isArray(ring) ? ring.length : 0;
+          }),
+        });
+        // #endregion
 
         applyVisibility();
         loadedExtentRef.current = extentToStore;
         loadedDistrictRef.current = selectedDistrict;
 
         setStatus(
-          `Cached buffers ${bufferFc.features.length}, schools ${schoolFc.features.length}, ` +
-            `playgrounds ${playFc.features.length}, kitas ${kitaFc.features.length}, sports ${sportFc.features.length}`
+          `Loaded parks ${greenFc.features.length}, bikes ${bikeFc.features.length}, ` +
+            `EV ${evFc.features.length}, fountains ${fountainFc.features.length}, ` +
+            `bathing ${bathingFc.features.length}, trees ${treeFc.features.length}`
         );
       } catch (err) {
         if (seq !== loadSeqRef.current) return;
@@ -345,18 +418,16 @@ export default function App() {
   return (
     <div className="app">
       <aside className="panel">
-        <h1 className="brand">Berlin Cannabis Zone Map</h1>
+        <h1 className="brand">Berlin Amenities Map</h1>
         <p className="lede">
-          Click the map to check whether a point sits inside a mapped 100&nbsp;m §&nbsp;5 buffer.
+          Dark outlines are the 12 Bezirke (boroughs), not neighborhood labels like Prenzlauer Berg.
+          Click the map for nearby amenities.
         </p>
-        <details className="disclaimer-fold">
-          <summary>Legal caveats</summary>
-          <p>{DISCLAIMER}</p>
-        </details>
+        <p className="hint">Turn on Parks when you want green fill — it stays off by default so borough borders stay clear.</p>
 
         <div className="section">
           <h2>Layers</h2>
-          <p className="hint">Buffers on by default. Turn on facilities when you need sources.</p>
+          <p className="hint">Street trees load at higher zoom (or with a borough filter).</p>
           {(Object.keys(LAYER_META) as (keyof Visibility)[]).map((key) => (
             <label className="layer-row" key={key}>
               <input
@@ -391,14 +462,19 @@ export default function App() {
         </div>
 
         <div className="section">
-          <h2>Point check</h2>
-          {!check && <p className="empty">Click the map to run a check.</p>}
-          {check && <CheckPanel check={check} />}
+          <h2>Nearest amenities</h2>
+          {!nearest && <p className="empty">Click the map to look up distances.</p>}
+          {nearest && <NearestPanel result={nearest} />}
         </div>
 
         <div className="section">
-          <h2>Borough buffer coverage</h2>
-          {coverage && <CoverageTable analysis={coverage} />}
+          <h2>Amenity counts by borough</h2>
+          {density && <DensityTable analysis={density} />}
+        </div>
+
+        <div className="section">
+          <h2>Green cover by borough</h2>
+          {greenBorough && <GreenTable analysis={greenBorough} />}
         </div>
 
         <details className="section provenance-fold">
@@ -409,6 +485,7 @@ export default function App() {
               <h3>{l.name}</h3>
               <div>Imported: {l.imported_at ?? "—"}</div>
               <div>CRS: EPSG:{l.srid}</div>
+              {l.license_text && <div>License: {l.license_text}</div>}
               {l.coverage_caveat && <div className="caveat">{l.coverage_caveat}</div>}
             </div>
           ))}
@@ -418,28 +495,32 @@ export default function App() {
       </aside>
       <div className="map-wrap">
         <div className="map" ref={mapNode} />
-        <div className="map-chip">{DISCLAIMER_SHORT}</div>
+        <div className="map-chip">Berlin open data · distances in metres (EPSG:25833)</div>
         <div className="legend" aria-label="Map legend">
           <div className="legend-title">Legend</div>
           <div className="legend-row">
-            <span className="swatch swatch-fill" style={{ background: "#c45c5c", opacity: 0.45 }} />
-            Mapped 100 m buffer
-          </div>
-          <div className="legend-row">
-            <span className="swatch swatch-dot" style={{ background: "#c45c26" }} />
-            School
-          </div>
-          <div className="legend-row">
-            <span className="swatch swatch-dot" style={{ background: "#5b4fc7" }} />
-            Kita
+            <span className="swatch swatch-fill" style={{ background: "#2f855a", opacity: 0.7 }} />
+            Park
           </div>
           <div className="legend-row">
             <span className="swatch swatch-dot" style={{ background: "#0f6a5a" }} />
-            Sports
+            Bike parking
           </div>
           <div className="legend-row">
-            <span className="swatch swatch-fill" style={{ background: "#b8860b", opacity: 0.7 }} />
-            Playground
+            <span className="swatch swatch-dot" style={{ background: "#1a6fbf" }} />
+            EV charger
+          </div>
+          <div className="legend-row">
+            <span className="swatch swatch-dot" style={{ background: "#3a7ca5" }} />
+            Fountain
+          </div>
+          <div className="legend-row">
+            <span className="swatch swatch-dot" style={{ background: "#0b6e99" }} />
+            Bathing water
+          </div>
+          <div className="legend-row">
+            <span className="swatch swatch-dot" style={{ background: "#2f6b3c" }} />
+            Street tree
           </div>
         </div>
         <div className="status">{status}</div>
@@ -448,55 +529,75 @@ export default function App() {
   );
 }
 
-function CheckPanel({ check }: { check: ConsumptionCheck }) {
-  const statusLabel =
-    check.status === "likely_restricted"
-      ? "Likely restricted (inside mapped buffer)"
-      : check.status === "outside_mapped_buffers"
-        ? "Outside mapped buffers"
-        : "Unknown (no buffers loaded)";
-
+function NearestPanel({ result }: { result: NearestAmenities }) {
   return (
-    <div className={`analysis-card check-${check.status}`}>
-      <h3>{statusLabel}</h3>
-      <div>
-        Point: {check.lon.toFixed(5)}, {check.lat.toFixed(5)} · buffer {check.buffer_m} m
-      </div>
-      <p className="caveat">{check.caveat}</p>
-      {check.hits?.length > 0 && (
-        <>
-          <strong>Intersecting rules</strong>
-          <ul className="hit-list">
-            {check.hits.slice(0, 8).map((h, i) => (
-              <li key={i}>
-                {(h.rule_type as string) ?? "?"} — {(h.name as string) ?? "unnamed"}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-      {check.nearest?.length > 0 && (
-        <>
-          <strong>Nearest buffers</strong>
-          <ul className="hit-list">
-            {check.nearest.slice(0, 5).map((n, i) => (
-              <li key={i}>
-                {(n.rule_type as string) ?? "?"} — {(n.name as string) ?? "unnamed"} ·{" "}
-                {typeof n.distance_m === "number" ? `${(n.distance_m as number).toFixed(0)} m` : "—"}
-              </li>
-            ))}
-          </ul>
-        </>
+    <div className="analysis-card">
+      <h3>
+        {result.lon.toFixed(5)}, {result.lat.toFixed(5)}
+      </h3>
+      <p className="caveat">{result.caveat}</p>
+      {result.nearest?.length > 0 ? (
+        <ul className="hit-list">
+          {result.nearest.map((n, i) => (
+            <li key={`${n.layer}-${i}`}>
+              {LAYER_LABELS[n.layer] ?? n.layer}
+              {n.name ? ` — ${n.name}` : ""} · {n.distance_m.toFixed(0)} m
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="empty">No amenity rows in the database yet.</p>
       )}
     </div>
   );
 }
 
-function CoverageTable({ analysis }: { analysis: AnalysisResponse }) {
+function DensityTable({ analysis }: { analysis: AnalysisResponse }) {
+  const rows = analysis.results.map((r) => ({
+    name: String(r.district_name ?? "—"),
+    trees: Number(r.trees ?? 0),
+    bike: Number(r.bike_parking ?? 0),
+    ev: Number(r.ev_chargers ?? 0),
+    fountains: Number(r.drinking_fountains ?? 0),
+    bathing: Number(r.bathing_waters ?? 0),
+  }));
+
+  return (
+    <div className="analysis-card">
+      <p className="caveat">{analysis.caveat}</p>
+      <table className="coverage-table density-table">
+        <thead>
+          <tr>
+            <th>Borough</th>
+            <th>Bike</th>
+            <th>EV</th>
+            <th>H₂O</th>
+            <th>Bath</th>
+            <th>Trees</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.name}>
+              <td>{r.name}</td>
+              <td>{r.bike}</td>
+              <td>{r.ev}</td>
+              <td>{r.fountains}</td>
+              <td>{r.bathing}</td>
+              <td>{r.trees}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function GreenTable({ analysis }: { analysis: AnalysisResponse }) {
   const rows = analysis.results
     .map((r) => ({
       name: String(r.district_name ?? "—"),
-      pct: typeof r.pct_mapped_restricted === "number" ? r.pct_mapped_restricted : null,
+      pct: typeof r.pct_of_district_area === "number" ? r.pct_of_district_area : null,
     }))
     .sort((a, b) => (b.pct ?? 0) - (a.pct ?? 0));
 
@@ -507,7 +608,7 @@ function CoverageTable({ analysis }: { analysis: AnalysisResponse }) {
         <thead>
           <tr>
             <th>Borough</th>
-            <th>% mapped</th>
+            <th>% green</th>
           </tr>
         </thead>
         <tbody>
@@ -517,7 +618,7 @@ function CoverageTable({ analysis }: { analysis: AnalysisResponse }) {
               <td>
                 <div className="pct-cell">
                   <span className="pct-bar" style={{ width: `${Math.min(r.pct ?? 0, 100)}%` }} />
-                  <span className="pct-label">{r.pct == null ? "—" : `${r.pct.toFixed(0)}%`}</span>
+                  <span className="pct-label">{r.pct == null ? "—" : `${r.pct.toFixed(1)}%`}</span>
                 </div>
               </td>
             </tr>
@@ -536,6 +637,22 @@ type SourceStyle = {
 };
 
 function ensureSource(map: Map, id: string, data: FeatureCollection, style: SourceStyle) {
+  // #region agent log
+  if (id === "districts" || id === "green_spaces") {
+    const first = data.features[0];
+    const g = first?.geometry;
+    const c = (g?.coordinates ?? []) as unknown[][];
+    const ring = g?.type === "MultiPolygon" ? (c[0]?.[0] as unknown[]) : (c[0] as unknown[]);
+    dbg("E", "App.tsx:ensureSource", "setData/addSource", {
+      id,
+      updatingExisting: Boolean(map.getSource(id)),
+      featureCount: data.features.length,
+      firstName: first?.properties?.name ?? null,
+      firstRingPts: Array.isArray(ring) ? ring.length : 0,
+      styleType: style.type,
+    });
+  }
+  // #endregion
   if (map.getSource(id)) {
     (map.getSource(id) as maplibregl.GeoJSONSource).setData(data as never);
     const mainId = style.type === "line" ? `${id}-line` : `${id}-layer`;

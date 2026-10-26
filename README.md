@@ -1,12 +1,10 @@
-# KCanG-Map
+# Berlin Amenities Map
 
-PostGIS learning app: **mapped KCanG § 5** public-consumption restriction buffers in Berlin — not legal advice.
+PostGIS learning app: **mapped Berlin open-data amenities** — parks, street trees, bike parking, EV chargers, drinking fountains, and bathing waters.
 
 **Stack:** Docker PostGIS · FastAPI · SQLAlchemy 2 / GeoAlchemy2 · Alembic · Vite / React / MapLibre
 
 Product docs: [docs/overview.md](docs/overview.md) · [mvp-scope](docs/mvp-scope.md) · [data-sources](docs/data-sources.md) · [technical-requirements](docs/technical-requirements.md)
-
-Legal basis: [§ 5 KCanG](https://www.gesetze-im-internet.de/kcang/__5.html) · [BMG FAQ](https://www.bundesgesundheitsministerium.de/themen/cannabis/faq-cannabisgesetz/)
 
 ## Quick start
 
@@ -28,6 +26,8 @@ pip install -r requirements.txt
 alembic upgrade head
 python -m scripts.import_layers                 # Berlin open data → PostGIS (default)
 # python -m scripts.import_layers --source samples  # tiny offline fixtures only
+# Skip street trees for a faster first open-data import:
+# python -m scripts.import_layers --layers districts,green_spaces,schools,bike_parking,ev_chargers,drinking_fountains,bathing_waters
 
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
@@ -48,19 +48,20 @@ No external API keys. Only local `DATABASE_URL` in `.env` (gitignored).
 | --- | --- |
 | `dataset_catalog` | Provenance, vintage, caveats |
 | `districts` | Borough polygons (EPSG:25833) |
-| `schools` / `playgrounds` / `kitas` / `sports_facilities` | § 5 ban seeds |
-| `restriction_buffers` | `ST_Buffer(facility, 100)` in EPSG:25833 |
-| `restriction_union` | Unary union for coverage stats |
-| `green_spaces` | Optional context — **not** a ban rule |
-
-Verdict labels: `likely_restricted` | `outside_mapped_buffers` | `unknown` — never “legal to consume here.”
+| `green_spaces` | Public parks (polygons) |
+| `schools` | Context for school↔green proximity |
+| `trees` | Street trees (bbox-scoped on the map) |
+| `bike_parking` | Bike parking points |
+| `ev_chargers` | EV charging sites |
+| `drinking_fountains` | Public drinking fountains |
+| `bathing_waters` | Official bathing sites |
 
 ## Analyses
 
-1. **Consumption check** — `GET /analyses/consumption-check?lon=&lat=`  
-2. **Borough buffer coverage** — share of district area intersecting mapped buffers  
-
-Parks are not blanket-banned under § 5. Fußgängerzonen 07:00–20:00 and presence of minors are not modeled.
+1. **Nearest amenities** — `GET /analyses/nearest-amenities?lon=&lat=`  
+2. **Amenity density by borough** — counts per district  
+3. **Green by borough** — mapped park area share  
+4. **School–green proximity** — secondary distance summary  
 
 ## Tests
 

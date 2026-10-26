@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Load Berlin open data into PostGIS and rebuild KCanG 100 m restriction buffers."""
+"""Load Berlin open amenity data into PostGIS."""
 
 from __future__ import annotations
 
@@ -21,15 +21,9 @@ sys.path.insert(0, str(BACKEND))
 from app.db import SessionLocal, engine  # noqa: E402
 
 TARGET_SRID = 25833
-BUFFER_M = 100
 
 DISTRICTS_URL = (
     "https://tsb-opendata.s3.eu-central-1.amazonaws.com/bezirksgrenzen/bezirksgrenzen.geojson"
-)
-
-BUFFER_CAVEAT = (
-    "100 m ST_Buffer of facility geometry in EPSG:25833 approximates § 5 KCanG Sichtweite "
-    "from Eingangsbereich — not a surveyed entrance buffer. Not legal advice."
 )
 
 CATALOG = {
@@ -48,13 +42,13 @@ CATALOG = {
     },
     "green_spaces": {
         "slug": "green_spaces",
-        "name": "Public green spaces (context)",
-        "description": "Grünanlagen — context only; not a § 5 blanket ban.",
+        "name": "Public green spaces",
+        "description": "Dedicated public Grünanlagen (parks and green areas).",
         "source_organization": "SenMVKU Berlin",
         "source_url": "https://daten.berlin.de/datensaetze/grunanlagenbestand-berlin-einschliesslich-der-offentlichen-spielplatze-wfs-737fd0a4",
         "license_text": "dl-de/zero-2.0",
         "geometry_type": "MultiPolygon",
-        "coverage_caveat": "Parks are not automatically banned under § 5 KCanG.",
+        "coverage_caveat": "Mapped public green inventory only — not private gardens.",
         "sample_file": "green_spaces.geojson",
         "cache_file": "green_spaces.geojson",
         "wfs": "WFS:https://gdi.berlin.de/services/wfs/gruenanlagen",
@@ -63,64 +57,101 @@ CATALOG = {
     "schools": {
         "slug": "schools",
         "name": "Schools",
-        "description": "School points — § 5 ban seed.",
+        "description": "Main school locations (context for green proximity).",
         "source_organization": "Senatsverwaltung Berlin",
         "source_url": "https://daten.berlin.de/datensaetze/schulen-wfs-ebc64e18",
         "license_text": "dl-de/zero-2.0",
         "geometry_type": "Point",
-        "coverage_caveat": BUFFER_CAVEAT,
+        "coverage_caveat": "Main school sites only; catchment polygons not imported.",
         "sample_file": "schools.geojson",
         "cache_file": "schools.geojson",
         "wfs": "WFS:https://gdi.berlin.de/services/wfs/schulen",
         "wfs_layer": "schulen:schulen",
-        "rule_type": "school",
     },
-    "playgrounds": {
-        "slug": "playgrounds",
-        "name": "Playgrounds",
-        "description": "Public playgrounds — § 5 ban seed.",
+    "trees": {
+        "slug": "trees",
+        "name": "Street trees",
+        "description": "Berlin street-tree inventory (Straßenbäume).",
         "source_organization": "SenMVKU Berlin",
-        "source_url": "https://daten.berlin.de/datensaetze/grunanlagenbestand-berlin-einschliesslich-der-offentlichen-spielplatze-wfs-737fd0a4",
-        "license_text": "dl-de/zero-2.0",
-        "geometry_type": "MultiPolygon",
-        "coverage_caveat": BUFFER_CAVEAT,
-        "sample_file": "playgrounds.geojson",
-        "cache_file": "playgrounds.geojson",
-        "wfs": "WFS:https://gdi.berlin.de/services/wfs/gruenanlagen",
-        "wfs_layer": "gruenanlagen:spielplaetze",
-        "rule_type": "playground",
-    },
-    "kitas": {
-        "slug": "kitas",
-        "name": "Kindertagesstätten",
-        "description": "Publicly funded Kita points — § 5 children/youth facility seed.",
-        "source_organization": "SenBJF Berlin",
-        "source_url": "https://daten.berlin.de/datensaetze/kindertagesstatten-wfs-d03b94d2",
+        "source_url": "https://daten.berlin.de/datensaetze/baumbestand-berlin-wfs-48ad3a23",
         "license_text": "dl-de/zero-2.0",
         "geometry_type": "Point",
-        "coverage_caveat": BUFFER_CAVEAT + " Inventory is publicly funded Kitas only.",
-        "sample_file": "kitas.geojson",
-        "cache_file": "kitas.geojson",
-        "wfs": "WFS:https://gdi.berlin.de/services/wfs/kita",
-        "wfs_layer": "kita:kita",
-        "rule_type": "kita",
+        "coverage_caveat": (
+            "Street trees only in MVP (baumbestand:strassenbaeume). "
+            "Large layer — map GeoJSON requires a bbox."
+        ),
+        "sample_file": "trees.geojson",
+        "cache_file": "trees.geojson",
+        "wfs": "WFS:https://gdi.berlin.de/services/wfs/baumbestand",
+        "wfs_layer": "baumbestand:strassenbaeume",
     },
-    "sports_facilities": {
-        "slug": "sports_facilities",
-        "name": "Public sports facilities",
-        "description": "Land-owned Kernsportanlagen points — § 5 sports seed.",
-        "source_organization": "SenInnSport Berlin",
-        "source_url": "http://daten.berlin.de/datensaetze/standorte-offentlicher-sportanlagen-wfs-a291318f",
+    "bike_parking": {
+        "slug": "bike_parking",
+        "name": "Bike parking",
+        "description": "Fahrradabstellanlagen (infraVelo inventory since 2021).",
+        "source_organization": "GB infraVelo GmbH",
+        "source_url": "https://daten.berlin.de/datensaetze/fahrradabstellanlagen-seit-2021-wfs-4f226c23",
         "license_text": "dl-de/zero-2.0",
         "geometry_type": "Point",
-        "coverage_caveat": BUFFER_CAVEAT + " Land-owned public Kernsportanlagen inventory.",
-        "sample_file": "sports_facilities.geojson",
-        "cache_file": "sports_facilities.geojson",
-        "wfs": "WFS:https://gdi.berlin.de/services/wfs/sportstandorte",
-        "wfs_layer": "sportstandorte:sportstandorte",
-        "rule_type": "sports",
+        "coverage_caveat": "Public bike-parking inventory; private racks not included.",
+        "sample_file": "bike_parking.geojson",
+        "cache_file": "bike_parking.geojson",
+        "wfs": "WFS:https://gdi.berlin.de/services/wfs/fahrradabstellanlagen",
+        "wfs_layer": "fahrradabstellanlagen:fahrradabstellanlagen",
+    },
+    "ev_chargers": {
+        "slug": "ev_chargers",
+        "name": "EV chargers",
+        "description": "Elektro-Ladesäulen standorte (Energieatlas).",
+        "source_organization": "SenWEB Berlin",
+        "source_url": "https://daten.berlin.de/datensaetze/elektro-ladesaulen-und-ladepunkte-wfs-f306dd51",
+        "license_text": "dl-de/zero-2.0",
+        "geometry_type": "Point",
+        "coverage_caveat": "Public and publicly accessible chargers; MultiPoint sites reduced to a point.",
+        "sample_file": "ev_chargers.geojson",
+        "cache_file": "ev_chargers.geojson",
+        "wfs": "WFS:https://gdi.berlin.de/services/wfs/eladesaeulen",
+        "wfs_layer": "eladesaeulen:lades_standorte",
+    },
+    "drinking_fountains": {
+        "slug": "drinking_fountains",
+        "name": "Drinking fountains",
+        "description": "Public Trinkwasserbrunnen (Berliner Wasserbetriebe).",
+        "source_organization": "Berliner Wasserbetriebe",
+        "source_url": "https://daten.berlin.de/datensaetze/trinkwasserbrunnen-wfs-47dba2c3",
+        "license_text": "dl-de/zero-2.0",
+        "geometry_type": "Point",
+        "coverage_caveat": "Typically seasonal (May–October); check source for outages.",
+        "sample_file": "drinking_fountains.geojson",
+        "cache_file": "drinking_fountains.geojson",
+        "wfs": "WFS:https://gdi.berlin.de/services/wfs/trinkwasserbrunnen",
+        "wfs_layer": "trinkwasserbrunnen:trinkwasserbrunnen",
+    },
+    "bathing_waters": {
+        "slug": "bathing_waters",
+        "name": "Bathing waters",
+        "description": "Official Badegewässer / Badestellen with EU quality rating.",
+        "source_organization": "LAGeSo Berlin",
+        "source_url": "https://daten.berlin.de/datensaetze/badegewasserqualitat-wfs-6ba85d36",
+        "license_text": "cc-by/4.0 — Geoportal Berlin / LAGeSo; BWB where noted",
+        "geometry_type": "Point",
+        "coverage_caveat": "Official designated bathing sites only (~39); not every swimming spot.",
+        "sample_file": "bathing_waters.geojson",
+        "cache_file": "bathing_waters.geojson",
+        "wfs": "WFS:https://gdi.berlin.de/services/wfs/badegewaesser",
+        "wfs_layer": "badegewaesser:aa_badestellen",
     },
 }
+
+FEATURE_TABLES = (
+    "bathing_waters",
+    "drinking_fountains",
+    "ev_chargers",
+    "bike_parking",
+    "trees",
+    "schools",
+    "green_spaces",
+)
 
 
 def upsert_catalog(session, meta: dict) -> int:
@@ -194,7 +225,7 @@ def fetch_wfs(wfs: str, layer: str, dest: Path) -> bool:
             "1000",
         ]
         print(" ".join(cmd))
-        subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=300)
+        subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=900)
         return dest.exists() and dest.stat().st_size > 1000
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as exc:
         print(f"WFS fetch failed ({exc})", file=sys.stderr)
@@ -249,13 +280,20 @@ def insert_polygon_feature(session, table: str, catalog_id: int, source_id, name
 
 
 def insert_point_feature(session, table: str, catalog_id: int, source_id, name, extra_col, extra_val, geom_json: str) -> None:
+    """Insert a point; MultiPoint/GeometryCollection reduced via ST_PointOnSurface."""
     session.execute(
         text(
             f"""
             INSERT INTO {table} (source_id, name, {extra_col}, catalog_id, geom)
             VALUES (
               :source_id, :name, :extra, :catalog_id,
-              ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON(:geom), 4326), :srid)
+              ST_Transform(
+                ST_SetSRID(
+                  ST_PointOnSurface(ST_MakeValid(ST_GeomFromGeoJSON(:geom))),
+                  4326
+                ),
+                :srid
+              )
             )
             """
         ),
@@ -294,16 +332,7 @@ def assign_district(session, table: str, point_on_surface: bool) -> None:
 
 
 def import_districts(session, features: list[dict], catalog_id: int) -> None:
-    for t in (
-        "restriction_union",
-        "restriction_buffers",
-        "sports_facilities",
-        "kitas",
-        "playgrounds",
-        "schools",
-        "green_spaces",
-        "districts",
-    ):
+    for t in (*FEATURE_TABLES, "districts"):
         session.execute(text(f"DELETE FROM {t}"))
     for feat in features:
         props = feat.get("properties") or {}
@@ -365,132 +394,149 @@ def import_schools(session, features: list[dict], catalog_id: int) -> None:
     assign_district(session, "schools", False)
 
 
-def import_playgrounds(session, features: list[dict], catalog_id: int) -> None:
-    session.execute(text("DELETE FROM playgrounds"))
-    for feat in features:
-        props = feat.get("properties") or {}
-        insert_polygon_feature(
-            session,
-            "playgrounds",
-            catalog_id,
-            str(props.get("pitid") or props.get("source_id") or "") or None,
-            props.get("namenr") or props.get("name"),
-            "space_type",
-            props.get("objartname") or props.get("space_type"),
-            json.dumps(feat["geometry"]),
-        )
-    assign_district(session, "playgrounds", True)
-
-
-def import_kitas(session, features: list[dict], catalog_id: int) -> None:
-    session.execute(text("DELETE FROM kitas"))
+def import_trees(session, features: list[dict], catalog_id: int) -> None:
+    session.execute(text("DELETE FROM trees"))
     for feat in features:
         props = feat.get("properties") or {}
         insert_point_feature(
             session,
-            "kitas",
+            "trees",
             catalog_id,
-            str(props.get("e_nr") or props.get("source_id") or "") or None,
-            props.get("e_name") or props.get("name"),
-            "facility_type",
-            props.get("e_art") or props.get("facility_type"),
+            str(props.get("gisid") or props.get("pitid") or props.get("source_id") or "") or None,
+            props.get("art_dtsch") or props.get("namenr") or props.get("name"),
+            "species",
+            props.get("art_bot") or props.get("gattung") or props.get("species"),
             json.dumps(feat["geometry"]),
         )
-    assign_district(session, "kitas", False)
+    assign_district(session, "trees", False)
 
 
-def import_sports(session, features: list[dict], catalog_id: int) -> None:
-    session.execute(text("DELETE FROM sports_facilities"))
+def import_bike_parking(session, features: list[dict], catalog_id: int) -> None:
+    session.execute(text("DELETE FROM bike_parking"))
     for feat in features:
         props = feat.get("properties") or {}
         insert_point_feature(
             session,
-            "sports_facilities",
+            "bike_parking",
             catalog_id,
-            str(props.get("id") or props.get("source_id") or "") or None,
-            props.get("name"),
+            str(props.get("projektnummer") or props.get("source_id") or "") or None,
+            props.get("strassenname_oa") or props.get("name"),
             "facility_type",
-            props.get("facility_type") or "sports",
+            props.get("faa_typ1") or props.get("facility_type"),
             json.dumps(feat["geometry"]),
         )
-    assign_district(session, "sports_facilities", False)
+    assign_district(session, "bike_parking", False)
 
 
-def build_restriction_buffers(session) -> None:
-    session.execute(text("DELETE FROM restriction_union"))
-    session.execute(text("DELETE FROM restriction_buffers"))
-    session.execute(
-        text(
-            f"""
-            INSERT INTO restriction_buffers (rule_type, source_table, source_id, name, district_id, buffer_m, geom)
-            SELECT 'school', 'schools', source_id, name, district_id, {BUFFER_M},
-                   ST_Multi(ST_Buffer(geom, {BUFFER_M}))
-            FROM schools
-            UNION ALL
-            SELECT 'playground', 'playgrounds', source_id, name, district_id, {BUFFER_M},
-                   ST_Multi(ST_Buffer(geom, {BUFFER_M}))
-            FROM playgrounds
-            UNION ALL
-            SELECT 'kita', 'kitas', source_id, name, district_id, {BUFFER_M},
-                   ST_Multi(ST_Buffer(geom, {BUFFER_M}))
-            FROM kitas
-            UNION ALL
-            SELECT 'sports', 'sports_facilities', source_id, name, district_id, {BUFFER_M},
-                   ST_Multi(ST_Buffer(geom, {BUFFER_M}))
-            FROM sports_facilities
-            """
+def import_ev_chargers(session, features: list[dict], catalog_id: int) -> None:
+    session.execute(text("DELETE FROM ev_chargers"))
+    for feat in features:
+        props = feat.get("properties") or {}
+        name = props.get("adresse") or props.get("name")
+        if props.get("betreiber") and name:
+            name = f"{name} ({props.get('betreiber')})"
+        insert_point_feature(
+            session,
+            "ev_chargers",
+            catalog_id,
+            str(props.get("importid") or props.get("source_id") or "") or None,
+            name,
+            "charger_type",
+            props.get("art_ladeeinrichtung") or props.get("charger_type"),
+            json.dumps(feat["geometry"]),
         )
-    )
-    # Per-district unions keep ST_Union tractable vs one citywide collect.
-    session.execute(
-        text(
-            """
-            INSERT INTO restriction_union (note, geom)
-            SELECT
-              'district_id=' || d.id::text,
-              ST_Multi(ST_UnaryUnion(ST_Collect(ST_Intersection(d.geom, b.geom))))
-            FROM districts d
-            JOIN restriction_buffers b ON ST_Intersects(d.geom, b.geom)
-            GROUP BY d.id
-            HAVING ST_UnaryUnion(ST_Collect(ST_Intersection(d.geom, b.geom))) IS NOT NULL
-            """
+    assign_district(session, "ev_chargers", False)
+
+
+def import_drinking_fountains(session, features: list[dict], catalog_id: int) -> None:
+    session.execute(text("DELETE FROM drinking_fountains"))
+    for feat in features:
+        props = feat.get("properties") or {}
+        insert_point_feature(
+            session,
+            "drinking_fountains",
+            catalog_id,
+            str(props.get("nummer") or props.get("source_id") or "") or None,
+            props.get("standort") or props.get("name"),
+            "fountain_type",
+            props.get("trinkbrunnenart") or props.get("fountain_type"),
+            json.dumps(feat["geometry"]),
         )
-    )
+    assign_district(session, "drinking_fountains", False)
 
 
-def run(source: str) -> None:
+def import_bathing_waters(session, features: list[dict], catalog_id: int) -> None:
+    session.execute(text("DELETE FROM bathing_waters"))
+    for feat in features:
+        props = feat.get("properties") or {}
+        insert_point_feature(
+            session,
+            "bathing_waters",
+            catalog_id,
+            str(props.get("bathingwat") or props.get("source_id") or "") or None,
+            props.get("badegewaes") or props.get("name"),
+            "quality_rating",
+            props.get("eu_einst") or props.get("quality_rating"),
+            json.dumps(feat["geometry"]),
+        )
+    assign_district(session, "bathing_waters", False)
+
+
+IMPORTERS = {
+    "districts": import_districts,
+    "green_spaces": import_green,
+    "schools": import_schools,
+    "trees": import_trees,
+    "bike_parking": import_bike_parking,
+    "ev_chargers": import_ev_chargers,
+    "drinking_fountains": import_drinking_fountains,
+    "bathing_waters": import_bathing_waters,
+}
+
+DEFAULT_ORDER = [
+    "districts",
+    "green_spaces",
+    "schools",
+    "trees",
+    "bike_parking",
+    "ev_chargers",
+    "drinking_fountains",
+    "bathing_waters",
+]
+
+
+def run(source: str, layers: list[str] | None = None) -> None:
+    selected = layers or DEFAULT_ORDER
+    for layer in selected:
+        if layer not in IMPORTERS:
+            raise SystemExit(f"Unknown layer: {layer}")
+    # Re-importing districts clears dependent feature tables — put it first when present.
+    if "districts" in selected:
+        selected = ["districts", *[l for l in selected if l != "districts"]]
+
     session = SessionLocal()
     try:
         with session.begin():
-            # Clear dependents first via districts import order
-            steps = [
-                ("districts", import_districts),
-                ("green_spaces", import_green),
-                ("schools", import_schools),
-                ("playgrounds", import_playgrounds),
-                ("kitas", import_kitas),
-                ("sports_facilities", import_sports),
-            ]
-            for layer, importer in steps:
+            for layer in selected:
                 meta = CATALOG[layer]
                 catalog_id = upsert_catalog(session, meta)
                 path = resolve_path(layer, source)
                 features = load_geojson_features(path)
                 print(f"Importing {layer}: {len(features)} from {path.name}")
-                importer(session, features, catalog_id)
+                IMPORTERS[layer](session, features, catalog_id)
 
-            print("Building restriction_buffers (100 m)…")
-            build_restriction_buffers(session)
             counts = session.execute(
                 text(
                     """
                     SELECT
                       (SELECT COUNT(*) FROM districts) AS districts,
+                      (SELECT COUNT(*) FROM green_spaces) AS green_spaces,
                       (SELECT COUNT(*) FROM schools) AS schools,
-                      (SELECT COUNT(*) FROM playgrounds) AS playgrounds,
-                      (SELECT COUNT(*) FROM kitas) AS kitas,
-                      (SELECT COUNT(*) FROM sports_facilities) AS sports,
-                      (SELECT COUNT(*) FROM restriction_buffers) AS buffers
+                      (SELECT COUNT(*) FROM trees) AS trees,
+                      (SELECT COUNT(*) FROM bike_parking) AS bike_parking,
+                      (SELECT COUNT(*) FROM ev_chargers) AS ev_chargers,
+                      (SELECT COUNT(*) FROM drinking_fountains) AS drinking_fountains,
+                      (SELECT COUNT(*) FROM bathing_waters) AS bathing_waters
                     """
                 )
             ).mappings().one()
@@ -506,10 +552,15 @@ def run(source: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", choices=["open", "samples"], default="open")
+    parser.add_argument(
+        "--layers",
+        help="Comma-separated layer slugs (default: all). Useful to skip trees for a quick smoke run.",
+    )
     args = parser.parse_args()
+    layers = [s.strip() for s in args.layers.split(",") if s.strip()] if args.layers else None
     with engine.connect() as conn:
         conn.execute(text("SELECT PostGIS_Version()"))
-    run(args.source)
+    run(args.source, layers)
 
 
 if __name__ == "__main__":

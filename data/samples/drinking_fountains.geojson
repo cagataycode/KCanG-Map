@@ -1,0 +1,15 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "source_id": "f1", "name": "Tiergarten fountain", "fountain_type": "Kaiser" },
+      "geometry": { "type": "Point", "coordinates": [13.37, 52.514] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "source_id": "f2", "name": "Prenzlauer Berg fountain", "fountain_type": "Modern" },
+      "geometry": { "type": "Point", "coordinates": [13.42, 52.54] }
+    }
+  ]
+}

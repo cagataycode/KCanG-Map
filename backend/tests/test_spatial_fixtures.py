@@ -1,4 +1,4 @@
-"""Known-answer fixtures for EPSG:25833 metric ops and 100 m KCanG buffers."""
+"""Known-answer fixtures for EPSG:25833 metric ops and KNN distance."""
 
 from sqlalchemy import create_engine, text
 
@@ -41,47 +41,45 @@ def test_metric_area_epsg25833():
     assert abs(float(area) - 1_000_000.0) < 1.0
 
 
-def test_hundred_metre_buffer_contains_point_at_50m():
-    """Point 50 m east of a school seed is inside ST_Buffer(..., 100)."""
+def test_knn_nearest_of_two_points():
+    """KNN (<->) picks the closer of two amenity points."""
     engine = create_engine(settings.database_url)
     with engine.connect() as conn:
-        inside = conn.execute(
+        dist = conn.execute(
             text(
                 """
-                WITH school AS (
+                WITH amenity AS (
                   SELECT ST_SetSRID(ST_MakePoint(390000, 5820000), 25833) AS geom
-                ),
-                buf AS (
-                  SELECT ST_Buffer(geom, 100) AS geom FROM school
+                  UNION ALL
+                  SELECT ST_SetSRID(ST_MakePoint(391000, 5820000), 25833)
                 ),
                 probe AS (
-                  SELECT ST_SetSRID(ST_MakePoint(390050, 5820000), 25833) AS geom
+                  SELECT ST_SetSRID(ST_MakePoint(390100, 5820000), 25833) AS geom
                 )
-                SELECT ST_Contains(buf.geom, probe.geom) FROM buf, probe
+                SELECT ST_Distance(a.geom, probe.geom)
+                FROM amenity a, probe
+                ORDER BY a.geom <-> probe.geom
+                LIMIT 1
                 """
             )
         ).scalar()
-    assert inside is True
+    assert dist is not None
+    assert abs(float(dist) - 100.0) < 0.01
 
 
-def test_hundred_metre_buffer_excludes_point_at_150m():
-    """Point 150 m east of a school seed is outside ST_Buffer(..., 100)."""
+def test_point_on_surface_multipoint():
+    """MultiPoint sites (e.g. EV chargers) reduce to a usable point."""
     engine = create_engine(settings.database_url)
     with engine.connect() as conn:
-        inside = conn.execute(
+        gtype = conn.execute(
             text(
                 """
-                WITH school AS (
-                  SELECT ST_SetSRID(ST_MakePoint(390000, 5820000), 25833) AS geom
-                ),
-                buf AS (
-                  SELECT ST_Buffer(geom, 100) AS geom FROM school
-                ),
-                probe AS (
-                  SELECT ST_SetSRID(ST_MakePoint(390150, 5820000), 25833) AS geom
+                SELECT GeometryType(
+                  ST_PointOnSurface(
+                    ST_GeomFromText('MULTIPOINT(390000 5820000, 390010 5820000)', 25833)
+                  )
                 )
-                SELECT ST_Contains(buf.geom, probe.geom) FROM buf, probe
                 """
             )
         ).scalar()
-    assert inside is False
+    assert gtype == "POINT"
