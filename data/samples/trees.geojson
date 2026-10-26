@@ -15,6 +15,31 @@
       "type": "Feature",
       "properties": { "source_id": "t3", "name": "Ahorn", "species": "Acer platanoides" },
       "geometry": { "type": "Point", "coordinates": [13.43, 52.505] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "source_id": "t4", "name": "Eiche", "species": "Quercus robur" },
+      "geometry": { "type": "Point", "coordinates": [13.39, 52.51] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "source_id": "t5", "name": "Kastanie", "species": "Aesculus hippocastanum" },
+      "geometry": { "type": "Point", "coordinates": [13.42, 52.53] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "source_id": "t6", "name": "Birke", "species": "Betula pendula" },
+      "geometry": { "type": "Point", "coordinates": [13.37, 52.525] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "source_id": "t7", "name": "Buche", "species": "Fagus sylvatica" },
+      "geometry": { "type": "Point", "coordinates": [13.415, 52.508] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "source_id": "t8", "name": "Ulme", "species": "Ulmus laevis" },
+      "geometry": { "type": "Point", "coordinates": [13.4, 52.535] }
     }
   ]
 }
