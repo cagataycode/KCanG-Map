@@ -40,6 +40,20 @@ CATALOG = {
         "cache_file": "bezirksgrenzen.geojson",
         "download_url": DISTRICTS_URL,
     },
+    "neighborhoods": {
+        "slug": "neighborhoods",
+        "name": "Berlin neighborhoods (Ortsteile)",
+        "description": "ALKIS Ortsteil boundaries (e.g. Prenzlauer Berg).",
+        "source_organization": "Senatsverwaltung für Stadtentwicklung, Bauen und Wohnen Berlin",
+        "source_url": "https://daten.berlin.de/datensaetze/alkis-berlin-ortsteile-wfs-61bd3084",
+        "license_text": "dl-de/zero-2.0",
+        "geometry_type": "MultiPolygon",
+        "coverage_caveat": "Official Ortsteile — finer than Bezirke; for map context, not amenity filters.",
+        "sample_file": "neighborhoods.geojson",
+        "cache_file": "neighborhoods.geojson",
+        "wfs": "WFS:https://gdi.berlin.de/services/wfs/alkis_ortsteile",
+        "wfs_layer": "alkis_ortsteile:ortsteile",
+    },
     "green_spaces": {
         "slug": "green_spaces",
         "name": "Public green spaces",
@@ -141,6 +155,48 @@ CATALOG = {
         "wfs": "WFS:https://gdi.berlin.de/services/wfs/badegewaesser",
         "wfs_layer": "badegewaesser:aa_badestellen",
     },
+    "toilets": {
+        "slug": "toilets",
+        "name": "Public toilets",
+        "description": "Öffentliche Toilettenanlagen (Berlin inventory).",
+        "source_organization": "Senatsverwaltung Berlin",
+        "source_url": "https://daten.berlin.de/datensaetze/toiletten-wfs",
+        "license_text": "dl-de/zero-2.0",
+        "geometry_type": "Point",
+        "coverage_caveat": "Public toilet inventory; opening hours and accessibility vary by facility.",
+        "sample_file": "toilets.geojson",
+        "cache_file": "toilets.geojson",
+        "wfs": "WFS:https://gdi.berlin.de/services/wfs/toiletten",
+        "wfs_layer": "toiletten:toiletten",
+    },
+    "playgrounds": {
+        "slug": "playgrounds",
+        "name": "Playgrounds",
+        "description": "Öffentliche Spielplätze (dedicated playground polygons).",
+        "source_organization": "SenMVKU Berlin",
+        "source_url": "https://daten.berlin.de/datensaetze/spielplaetze-wfs",
+        "license_text": "dl-de/zero-2.0",
+        "geometry_type": "MultiPolygon",
+        "coverage_caveat": "Mapped public playground inventory — not every playable open space.",
+        "sample_file": "playgrounds.geojson",
+        "cache_file": "playgrounds.geojson",
+        "wfs": "WFS:https://gdi.berlin.de/services/wfs/spielplaetze",
+        "wfs_layer": "spielplaetze:spielplaetze",
+    },
+    "sports_facilities": {
+        "slug": "sports_facilities",
+        "name": "Sports facilities",
+        "description": "Öffentliche Sportstandorte / Sportanlagen.",
+        "source_organization": "Senatsverwaltung Berlin",
+        "source_url": "https://daten.berlin.de/datensaetze/sportstandorte-wfs",
+        "license_text": "dl-de/zero-2.0",
+        "geometry_type": "Point",
+        "coverage_caveat": "Public sports sites inventory; club-only facilities may be incomplete.",
+        "sample_file": "sports_facilities.geojson",
+        "cache_file": "sports_facilities.geojson",
+        "wfs": "WFS:https://gdi.berlin.de/services/wfs/sportstandorte",
+        "wfs_layer": "sportstandorte:sportstandorte",
+    },
 }
 
 FEATURE_TABLES = (
@@ -149,6 +205,9 @@ FEATURE_TABLES = (
     "ev_chargers",
     "bike_parking",
     "trees",
+    "toilets",
+    "playgrounds",
+    "sports_facilities",
     "schools",
     "green_spaces",
 )
@@ -225,7 +284,9 @@ def fetch_wfs(wfs: str, layer: str, dest: Path) -> bool:
             "1000",
         ]
         print(" ".join(cmd))
-        subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=900)
+        # Street trees can take a long time to page from WFS.
+        timeout = 3600 if "baumbestand" in layer else 900
+        subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=timeout)
         return dest.exists() and dest.stat().st_size > 1000
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as exc:
         print(f"WFS fetch failed ({exc})", file=sys.stderr)
@@ -332,7 +393,8 @@ def assign_district(session, table: str, point_on_surface: bool) -> None:
 
 
 def import_districts(session, features: list[dict], catalog_id: int) -> None:
-    for t in (*FEATURE_TABLES, "districts"):
+    # Neighborhoods reference districts — clear them before wiping Bezirke.
+    for t in (*FEATURE_TABLES, "neighborhoods", "districts"):
         session.execute(text(f"DELETE FROM {t}"))
     for feat in features:
         props = feat.get("properties") or {}
@@ -358,6 +420,44 @@ def import_districts(session, features: list[dict], catalog_id: int) -> None:
                 "srid": TARGET_SRID,
             },
         )
+
+
+def import_neighborhoods(session, features: list[dict], catalog_id: int) -> None:
+    session.execute(text("DELETE FROM neighborhoods"))
+    for feat in features:
+        props = feat.get("properties") or {}
+        official = str(props.get("sch") or props.get("uuid") or props.get("official_id") or props.get("name"))
+        name = str(props.get("nam") or props.get("name") or "Unknown")
+        session.execute(
+            text(
+                """
+                INSERT INTO neighborhoods (official_id, name, catalog_id, geom)
+                VALUES (
+                  :official_id, :name, :catalog_id,
+                  ST_Multi(ST_CollectionExtract(ST_MakeValid(
+                    ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON(:geom), 4326), :srid)
+                  ), 3))
+                )
+                """
+            ),
+            {
+                "official_id": official,
+                "name": name,
+                "catalog_id": catalog_id,
+                "geom": json.dumps(feat["geometry"]),
+                "srid": TARGET_SRID,
+            },
+        )
+    # Assign parent Bezirk by point-on-surface when districts are present.
+    session.execute(
+        text(
+            """
+            UPDATE neighborhoods n SET district_id = d.id
+            FROM districts d
+            WHERE ST_Intersects(ST_PointOnSurface(n.geom), d.geom)
+            """
+        )
+    )
 
 
 def import_green(session, features: list[dict], catalog_id: int) -> None:
@@ -396,18 +496,42 @@ def import_schools(session, features: list[dict], catalog_id: int) -> None:
 
 def import_trees(session, features: list[dict], catalog_id: int) -> None:
     session.execute(text("DELETE FROM trees"))
-    for feat in features:
-        props = feat.get("properties") or {}
-        insert_point_feature(
-            session,
-            "trees",
-            catalog_id,
-            str(props.get("gisid") or props.get("pitid") or props.get("source_id") or "") or None,
-            props.get("art_dtsch") or props.get("namenr") or props.get("name"),
-            "species",
-            props.get("art_bot") or props.get("gattung") or props.get("species"),
-            json.dumps(feat["geometry"]),
+    batch: list[dict] = []
+    sql = text(
+        """
+        INSERT INTO trees (source_id, name, species, catalog_id, geom)
+        VALUES (
+          :source_id, :name, :extra, :catalog_id,
+          ST_Transform(
+            ST_SetSRID(
+              ST_PointOnSurface(ST_MakeValid(ST_GeomFromGeoJSON(:geom))),
+              4326
+            ),
+            :srid
+          )
         )
+        """
+    )
+    for i, feat in enumerate(features, start=1):
+        props = feat.get("properties") or {}
+        batch.append(
+            {
+                "source_id": str(props.get("gisid") or props.get("pitid") or props.get("source_id") or "")
+                or None,
+                "name": props.get("art_dtsch") or props.get("namenr") or props.get("name"),
+                "extra": props.get("art_bot") or props.get("gattung") or props.get("species"),
+                "catalog_id": catalog_id,
+                "geom": json.dumps(feat["geometry"]),
+                "srid": TARGET_SRID,
+            }
+        )
+        if len(batch) >= 1000:
+            session.execute(sql, batch)
+            batch.clear()
+            if i % 20000 == 0:
+                print(f"  trees inserted: {i}")
+    if batch:
+        session.execute(sql, batch)
     assign_district(session, "trees", False)
 
 
@@ -482,8 +606,60 @@ def import_bathing_waters(session, features: list[dict], catalog_id: int) -> Non
     assign_district(session, "bathing_waters", False)
 
 
+def import_toilets(session, features: list[dict], catalog_id: int) -> None:
+    session.execute(text("DELETE FROM toilets"))
+    for feat in features:
+        props = feat.get("properties") or {}
+        insert_point_feature(
+            session,
+            "toilets",
+            catalog_id,
+            str(props.get("nummer") or props.get("id") or props.get("source_id") or "") or None,
+            props.get("ortsangabe") or props.get("strasse") or props.get("name"),
+            "facility_type",
+            props.get("anlagenart") or props.get("art") or props.get("facility_type"),
+            json.dumps(feat["geometry"]),
+        )
+    assign_district(session, "toilets", False)
+
+
+def import_playgrounds(session, features: list[dict], catalog_id: int) -> None:
+    session.execute(text("DELETE FROM playgrounds"))
+    for feat in features:
+        props = feat.get("properties") or {}
+        insert_polygon_feature(
+            session,
+            "playgrounds",
+            catalog_id,
+            str(props.get("pitid") or props.get("kennzeich") or props.get("source_id") or "") or None,
+            props.get("namenr") or props.get("name"),
+            "space_type",
+            props.get("objartname") or props.get("spielplatzart") or props.get("space_type"),
+            json.dumps(feat["geometry"]),
+        )
+    assign_district(session, "playgrounds", True)
+
+
+def import_sports_facilities(session, features: list[dict], catalog_id: int) -> None:
+    session.execute(text("DELETE FROM sports_facilities"))
+    for feat in features:
+        props = feat.get("properties") or {}
+        insert_point_feature(
+            session,
+            "sports_facilities",
+            catalog_id,
+            str(props.get("objekt_id") or props.get("id") or props.get("source_id") or "") or None,
+            props.get("name") or props.get("bezeichnung") or props.get("sportstaette"),
+            "facility_type",
+            props.get("sportart") or props.get("kategorie") or props.get("facility_type"),
+            json.dumps(feat["geometry"]),
+        )
+    assign_district(session, "sports_facilities", False)
+
+
 IMPORTERS = {
     "districts": import_districts,
+    "neighborhoods": import_neighborhoods,
     "green_spaces": import_green,
     "schools": import_schools,
     "trees": import_trees,
@@ -491,10 +667,14 @@ IMPORTERS = {
     "ev_chargers": import_ev_chargers,
     "drinking_fountains": import_drinking_fountains,
     "bathing_waters": import_bathing_waters,
+    "toilets": import_toilets,
+    "playgrounds": import_playgrounds,
+    "sports_facilities": import_sports_facilities,
 }
 
 DEFAULT_ORDER = [
     "districts",
+    "neighborhoods",
     "green_spaces",
     "schools",
     "trees",
@@ -502,6 +682,9 @@ DEFAULT_ORDER = [
     "ev_chargers",
     "drinking_fountains",
     "bathing_waters",
+    "toilets",
+    "playgrounds",
+    "sports_facilities",
 ]
 
 
@@ -511,8 +694,14 @@ def run(source: str, layers: list[str] | None = None) -> None:
         if layer not in IMPORTERS:
             raise SystemExit(f"Unknown layer: {layer}")
     # Re-importing districts clears dependent feature tables — put it first when present.
+    # Neighborhoods need districts for district_id assignment — import after districts.
+    ordered: list[str] = []
     if "districts" in selected:
-        selected = ["districts", *[l for l in selected if l != "districts"]]
+        ordered.append("districts")
+    if "neighborhoods" in selected:
+        ordered.append("neighborhoods")
+    ordered.extend(l for l in selected if l not in ("districts", "neighborhoods"))
+    selected = ordered
 
     session = SessionLocal()
     try:
@@ -530,13 +719,17 @@ def run(source: str, layers: list[str] | None = None) -> None:
                     """
                     SELECT
                       (SELECT COUNT(*) FROM districts) AS districts,
+                      (SELECT COUNT(*) FROM neighborhoods) AS neighborhoods,
                       (SELECT COUNT(*) FROM green_spaces) AS green_spaces,
                       (SELECT COUNT(*) FROM schools) AS schools,
                       (SELECT COUNT(*) FROM trees) AS trees,
                       (SELECT COUNT(*) FROM bike_parking) AS bike_parking,
                       (SELECT COUNT(*) FROM ev_chargers) AS ev_chargers,
                       (SELECT COUNT(*) FROM drinking_fountains) AS drinking_fountains,
-                      (SELECT COUNT(*) FROM bathing_waters) AS bathing_waters
+                      (SELECT COUNT(*) FROM bathing_waters) AS bathing_waters,
+                      (SELECT COUNT(*) FROM toilets) AS toilets,
+                      (SELECT COUNT(*) FROM playgrounds) AS playgrounds,
+                      (SELECT COUNT(*) FROM sports_facilities) AS sports_facilities
                     """
                 )
             ).mappings().one()
