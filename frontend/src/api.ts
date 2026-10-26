@@ -5,6 +5,30 @@ const inflight = new Map<string, Promise<unknown>>();
 
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 
+// #region agent log
+export function dbg(hypothesisId: string, location: string, message: string, data: Record<string, unknown>) {
+  const body = {
+    sessionId: "fdc9ac",
+    runId: "pre-fix",
+    hypothesisId,
+    location,
+    message,
+    data,
+    timestamp: Date.now(),
+  };
+  fetch("http://127.0.0.1:7803/ingest/53cf5f24-0770-4216-8ee3-812030475ac3", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "fdc9ac" },
+    body: JSON.stringify(body),
+  }).catch(() => {});
+  fetch(`${API_BASE}/debug/client-log`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).catch(() => {});
+}
+// #endregion
+
 async function getJson<T>(path: string, opts?: { ttlMs?: number; cache?: boolean }): Promise<T> {
   const cacheable = opts?.cache !== false;
   const ttlMs = opts?.ttlMs ?? DEFAULT_TTL_MS;
@@ -13,6 +37,12 @@ async function getJson<T>(path: string, opts?: { ttlMs?: number; cache?: boolean
   if (cacheable) {
     const hit = responseCache.get(key);
     if (hit && hit.expires > Date.now()) {
+      // #region agent log
+      if (path.startsWith("/districts") || path.startsWith("/green-spaces")) {
+        const fc = hit.data as { features?: unknown[] };
+        dbg("A", "api.ts:getJson", "cache HIT", { path, featureCount: fc.features?.length ?? null });
+      }
+      // #endregion
       return hit.data as T;
     }
     const pending = inflight.get(key);
@@ -27,6 +57,30 @@ async function getJson<T>(path: string, opts?: { ttlMs?: number; cache?: boolean
       throw new Error(`${res.status} ${res.statusText}`);
     }
     const data = (await res.json()) as T;
+    // #region agent log
+    if (path.startsWith("/districts") || path.startsWith("/green-spaces")) {
+      const fc = data as {
+        features?: Array<{
+          properties?: { name?: string };
+          geometry?: { type?: string; coordinates?: unknown };
+        }>;
+      };
+      const ringPts = (fc.features ?? []).slice(0, 3).map((f) => {
+        const g = f.geometry;
+        if (!g?.coordinates) return 0;
+        const c = g.coordinates as unknown[][];
+        const ring = g.type === "MultiPolygon" ? (c[0]?.[0] as unknown[]) : (c[0] as unknown[]);
+        return Array.isArray(ring) ? ring.length : 0;
+      });
+      dbg(path.startsWith("/districts") ? "B" : "C", "api.ts:getJson", "network fetch OK", {
+        path,
+        status: res.status,
+        featureCount: fc.features?.length ?? 0,
+        sampleNames: (fc.features ?? []).slice(0, 3).map((f) => f.properties?.name ?? null),
+        sampleRingPts: ringPts,
+      });
+    }
+    // #endregion
     if (cacheable) {
       responseCache.set(key, { expires: Date.now() + ttlMs, data });
     }
@@ -88,17 +142,19 @@ export type AnalysisResponse = {
   results: Record<string, unknown>[];
 };
 
-export type ConsumptionCheck = {
+export type NearestAmenities = {
   id: string;
   title: string;
-  status: "likely_restricted" | "outside_mapped_buffers" | "unknown" | string;
   lon: number;
   lat: number;
-  buffer_m: number;
-  hits: Array<Record<string, unknown>>;
-  nearest: Array<Record<string, unknown>>;
-  caveats: string[];
+  crs: string;
   caveat: string;
+  nearest: Array<{
+    layer: string;
+    id?: number;
+    name?: string | null;
+    distance_m: number;
+  }>;
 };
 
 export type BBox = [west: number, south: number, east: number, north: number];
@@ -137,26 +193,28 @@ function layerQuery(bbox?: string, districtId?: number): string {
 }
 
 export const api = {
-  layers: () => getJson<LayerMeta[]>("/layers"),
-  districtsList: () => getJson<DistrictListItem[]>("/districts/list"),
+  layers: () => getJson<LayerMeta[]>("/layers", { ttlMs: 60_000 }),
+  districtsList: () => getJson<DistrictListItem[]>("/districts/list", { ttlMs: 60_000 }),
   districts: (bbox?: string) =>
-    getJson<FeatureCollection>(`/districts${bbox ? `?bbox=${bbox}` : ""}`),
+    getJson<FeatureCollection>(`/districts${bbox ? `?bbox=${bbox}` : ""}`, { ttlMs: 30_000 }),
   greenSpaces: (bbox?: string, districtId?: number) =>
     getJson<FeatureCollection>(`/green-spaces${layerQuery(bbox, districtId)}`),
   schools: (bbox?: string, districtId?: number) =>
     getJson<FeatureCollection>(`/schools${layerQuery(bbox, districtId)}`),
-  playgrounds: (bbox?: string, districtId?: number) =>
-    getJson<FeatureCollection>(`/playgrounds${layerQuery(bbox, districtId)}`),
-  kitas: (bbox?: string, districtId?: number) =>
-    getJson<FeatureCollection>(`/kitas${layerQuery(bbox, districtId)}`),
-  sportsFacilities: (bbox?: string, districtId?: number) =>
-    getJson<FeatureCollection>(`/sports-facilities${layerQuery(bbox, districtId)}`),
-  restrictionBuffers: (bbox?: string, districtId?: number) =>
-    getJson<FeatureCollection>(`/restriction-buffers${layerQuery(bbox, districtId)}`),
+  trees: (bbox?: string, districtId?: number) =>
+    getJson<FeatureCollection>(`/trees${layerQuery(bbox, districtId)}`),
+  bikeParking: (bbox?: string, districtId?: number) =>
+    getJson<FeatureCollection>(`/bike-parking${layerQuery(bbox, districtId)}`),
+  evChargers: (bbox?: string, districtId?: number) =>
+    getJson<FeatureCollection>(`/ev-chargers${layerQuery(bbox, districtId)}`),
+  drinkingFountains: (bbox?: string, districtId?: number) =>
+    getJson<FeatureCollection>(`/drinking-fountains${layerQuery(bbox, districtId)}`),
+  bathingWaters: (bbox?: string, districtId?: number) =>
+    getJson<FeatureCollection>(`/bathing-waters${layerQuery(bbox, districtId)}`),
   /** Point checks are not cached — each click is a distinct query. */
-  consumptionCheck: (lon: number, lat: number) =>
-    getJson<ConsumptionCheck>(`/analyses/consumption-check?lon=${lon}&lat=${lat}`, { cache: false }),
-  restrictionCoverage: () => getJson<AnalysisResponse>("/analyses/restriction-coverage"),
+  nearestAmenities: (lon: number, lat: number) =>
+    getJson<NearestAmenities>(`/analyses/nearest-amenities?lon=${lon}&lat=${lat}`, { cache: false }),
+  amenityDensityByBorough: () => getJson<AnalysisResponse>("/analyses/amenity-density-by-borough"),
   greenByBorough: () => getJson<AnalysisResponse>("/analyses/green-by-borough"),
   schoolGreenProximity: (threshold = 500, districtId?: number) => {
     const q = new URLSearchParams({ threshold_m: String(threshold) });
