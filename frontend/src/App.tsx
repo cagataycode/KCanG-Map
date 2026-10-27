@@ -15,6 +15,7 @@ import {
   formatBbox,
   padBbox,
 } from "./api";
+import { PATTERNS, SCHEMA_TABLES, SchemaTable } from "./exercises";
 
 type Visibility = {
   districts: boolean;
@@ -76,39 +77,6 @@ const LAYER_SQL_REF: Partial<Record<keyof Visibility, string>> = {
   sports_facilities: "sports_facilities_geojson.sql",
 };
 
-const LAYER_GROUPS: Array<{
-  id: string;
-  label: string;
-  hint?: string;
-  keys: (keyof Visibility)[];
-}> = [
-  {
-    id: "boundaries",
-    label: "Boundaries",
-    hint: "Dark borders are Bezirke; lighter borders are Ortsteile.",
-    keys: ["districts", "neighborhoods"],
-  },
-  {
-    id: "areas",
-    label: "Areas",
-    keys: ["green_spaces", "playgrounds"],
-  },
-  {
-    id: "amenities",
-    label: "Amenities",
-    keys: [
-      "schools",
-      "trees",
-      "bike_parking",
-      "ev_chargers",
-      "drinking_fountains",
-      "bathing_waters",
-      "toilets",
-      "sports_facilities",
-    ],
-  },
-];
-
 type TaskTab = "nearby" | "compare" | "query";
 
 type CompareMeasure =
@@ -164,6 +132,31 @@ const SQL_TO_LAYER_SLUG: Record<string, string> = {
   "playgrounds_geojson.sql": "playgrounds",
   "sports_facilities_geojson.sql": "sports_facilities",
 };
+
+/** Table name in SQL → layer checkbox key. */
+const TABLE_TO_LAYER: Record<string, keyof Visibility> = {
+  districts: "districts",
+  neighborhoods: "neighborhoods",
+  green_spaces: "green_spaces",
+  schools: "schools",
+  trees: "trees",
+  bike_parking: "bike_parking",
+  ev_chargers: "ev_chargers",
+  drinking_fountains: "drinking_fountains",
+  bathing_waters: "bathing_waters",
+  toilets: "toilets",
+  playgrounds: "playgrounds",
+  sports_facilities: "sports_facilities",
+};
+
+function layersFromSql(sql: string): Set<keyof Visibility> {
+  const found = new Set<keyof Visibility>();
+  const lower = sql.toLowerCase();
+  for (const [table, key] of Object.entries(TABLE_TO_LAYER)) {
+    if (new RegExp(`\\b${table}\\b`).test(lower)) found.add(key);
+  }
+  return found;
+}
 
 const EMPTY_FC: FeatureCollection = { type: "FeatureCollection", features: [] };
 
@@ -246,46 +239,6 @@ function fillBindsFromMap(sql: string, values: Record<string, number | null>): s
     out = out.split(`:${key}`).join(lit);
   }
   return out;
-}
-
-function formatBindValue(v: number | null): string {
-  if (v == null || Number.isNaN(v)) return "NULL";
-  if (Number.isInteger(v)) return String(v);
-  return v.toFixed(5);
-}
-
-function starterTreesInView(bbox: BBox): QueryDoc {
-  const [minx, miny, maxx, maxy] = bbox.map((n) => n.toFixed(5));
-  const sql = `SELECT t.id, t.name, t.species,
-  ST_AsGeoJSON(ST_Transform(t.geom, 4326))::json AS geometry
-FROM trees t
-WHERE t.geom && ST_Transform(
-  ST_MakeEnvelope(${minx}, ${miny}, ${maxx}, ${maxy}, 4326),
-  25833
-)
-LIMIT 200;`;
-  return makeDoc("Trees in view", sql);
-}
-
-function starterNearestKnn(lon: number, lat: number): QueryDoc {
-  const sql = `WITH pt AS (
-  SELECT ST_Transform(ST_SetSRID(ST_MakePoint(${lon.toFixed(5)}, ${lat.toFixed(5)}), 4326), 25833) AS geom
-)
-SELECT 'trees' AS layer, t.id, t.name,
-  ST_Distance(t.geom, pt.geom) AS distance_m
-FROM trees t, pt
-ORDER BY t.geom <-> pt.geom
-LIMIT 5;`;
-  return makeDoc("Nearest KNN", sql);
-}
-
-function starterBoroughCounts(): QueryDoc {
-  const sql = `SELECT d.name AS district_name,
-  (SELECT COUNT(*)::int FROM trees t WHERE t.district_id = d.id) AS trees,
-  (SELECT COUNT(*)::int FROM bike_parking b WHERE b.district_id = d.id) AS bike_parking
-FROM districts d
-ORDER BY d.name;`;
-  return makeDoc("Borough counts", sql);
 }
 
 /** Ring signed area: positive = CCW (GeoJSON exterior). */
@@ -416,11 +369,9 @@ export default function App() {
   const [schoolGreen, setSchoolGreen] = useState<AnalysisResponse | null>(null);
   const [mapZoom, setMapZoom] = useState(10.4);
   const [queryDoc, setQueryDoc] = useState<QueryDoc | null>(null);
-  const [previousDoc, setPreviousDoc] = useState<QueryDoc | null>(null);
   const [pendingReplace, setPendingReplace] = useState<QueryDoc | null>(null);
   const [sqlOffer, setSqlOffer] = useState<QueryDoc | null>(null);
   const [lastClick, setLastClick] = useState<{ lon: number; lat: number } | null>(null);
-  const [filledNotice, setFilledNotice] = useState(false);
   const [taskTab, setTaskTab] = useState<TaskTab>("nearby");
   const [compareMeasure, setCompareMeasure] = useState<CompareMeasure>("bike_parking");
   const [layerCounts, setLayerCounts] = useState<LayerCounts>({});
@@ -428,6 +379,8 @@ export default function App() {
   const [sqlBusy, setSqlBusy] = useState(false);
   const [sqlError, setSqlError] = useState<string | null>(null);
   const [showQueryOnMap, setShowQueryOnMap] = useState(false);
+  const [activePatternId, setActivePatternId] = useState<string | null>(null);
+  const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [panelPct, setPanelPct] = useState(() => {
     try {
       const raw = localStorage.getItem("berlin-panel-pct-v2");
@@ -436,7 +389,7 @@ export default function App() {
     } catch {
       /* ignore */
     }
-    return 36;
+    return 40;
   });
   const [draggingSplit, setDraggingSplit] = useState(false);
   const appRef = useRef<HTMLDivElement | null>(null);
@@ -449,12 +402,9 @@ export default function App() {
     selectedDistrict === ""
       ? null
       : districts.find((d) => d.id === selectedDistrict)?.name ?? null;
-  const queryCatalog =
-    queryDoc?.filename && SQL_TO_LAYER_SLUG[queryDoc.filename]
-      ? layers.find((l) => l.slug === SQL_TO_LAYER_SLUG[queryDoc.filename!]) ?? null
-      : null;
   const queryBinds = queryDoc ? detectBinds(queryDoc.sql) : [];
   const queryDirty = queryDoc != null && queryDoc.sql !== queryDoc.savedSql;
+  const activePattern = PATTERNS.find((p) => p.id === activePatternId) ?? null;
 
   useEffect(() => {
     try {
@@ -858,9 +808,14 @@ export default function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    const overlayActive = Boolean(showQueryOnMap && sqlRun?.geojson?.features?.length);
     (Object.keys(visibility) as (keyof Visibility)[]).forEach((key) => {
       let visible = visibility[key];
       if (key === "trees" && visible && map.getZoom() < TREES_MIN_ZOOM) {
+        visible = false;
+      }
+      // Query overlay owns amenity geometry — hide inventory layers underneath so points aren't doubled.
+      if (overlayActive && key !== "districts" && key !== "neighborhoods") {
         visible = false;
       }
       const value = visible ? "visible" : "none";
@@ -882,7 +837,7 @@ export default function App() {
       src?.setData(EMPTY_FC as never);
       treesLoadedRef.current = false;
     }
-  }, [visibility, mapZoom]);
+  }, [visibility, mapZoom, showQueryOnMap, sqlRun]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -941,40 +896,104 @@ export default function App() {
     };
   };
 
-  const applyDocument = (next: QueryDoc) => {
-    setPreviousDoc(queryDoc);
+  /** Sync layer checkboxes to tables in the SQL; draw GeoJSON results on the map. */
+  const applyQueryToMap = (sql: string, result: SqlRunResult | null, explain: boolean) => {
+    const mentioned = layersFromSql(sql);
+    if (mentioned.size > 0) {
+      setVisibility((prev) => {
+        const next = { ...prev };
+        for (const key of Object.keys(LAYER_META) as (keyof Visibility)[]) {
+          next[key] = mentioned.has(key);
+        }
+        return next;
+      });
+    }
+
+    const fc = !explain ? result?.geojson : null;
+    if (fc?.features?.length) {
+      setShowQueryOnMap(true);
+      requestAnimationFrame(() => {
+        const map = mapRef.current;
+        if (!map) return;
+        ensureUserQueryOverlay(map, fc);
+        const bounds = new maplibregl.LngLatBounds();
+        for (const feature of fc.features) {
+          if (!feature.geometry || feature.geometry.type === "GeometryCollection") continue;
+          flattenCoords(feature.geometry.coordinates).forEach(([lng, lat]) =>
+            bounds.extend([lng, lat])
+          );
+        }
+        if (!bounds.isEmpty()) {
+          map.fitBounds(bounds as LngLatBoundsLike, {
+            padding: 56,
+            maxZoom: 16,
+            duration: 0,
+          });
+        }
+      });
+    } else if (!explain) {
+      setShowQueryOnMap(false);
+    }
+  };
+
+  const applyDocument = (next: QueryDoc, patternId: string | null = null) => {
     setQueryDoc({ ...next, savedSql: next.sql });
     setPendingReplace(null);
-    setTaskTab("query");
+    setActivePatternId(patternId);
+    setSqlRun(null);
     setSqlError(null);
-    setFilledNotice(false);
+    setTaskTab("query");
   };
 
   const requestReplace = (next: QueryDoc) => {
     if (queryDoc && queryDoc.sql !== queryDoc.savedSql) {
       setPendingReplace(next);
+      setActivePatternId(null);
       setTaskTab("query");
       return;
     }
-    applyDocument(next);
+    applyDocument(next, null);
   };
 
-  const goBackDocument = () => {
-    if (!previousDoc) return;
-    setQueryDoc(previousDoc);
-    setPreviousDoc(null);
-    setFilledNotice(false);
-    setSqlError(null);
+  const openPattern = (id: string) => {
+    const p = PATTERNS.find((x) => x.id === id);
+    if (!p) return;
+    const next = makeDoc(p.title, p.sql.trim());
+    if (queryDoc && queryDoc.sql !== queryDoc.savedSql) {
+      setPendingReplace(next);
+      setActivePatternId(id);
+      return;
+    }
+    applyDocument(next, id);
   };
 
-  const fillFromMap = () => {
-    if (!queryDoc) return;
-    const filled = fillBindsFromMap(queryDoc.sql, getBindValues());
-    if (filled === queryDoc.sql) return;
-    setPreviousDoc(queryDoc);
-    setQueryDoc({ ...queryDoc, sql: filled, savedSql: filled });
-    setFilledNotice(true);
-    setSqlError(null);
+  const insertIntoSql = (token: string) => {
+    setQueryDoc((d) => {
+      if (!d) {
+        const isTable = SCHEMA_TABLES.some((t) => t.table === token);
+        const sql = isTable
+          ? `SELECT id, name, district_id,\n  ST_AsGeoJSON(ST_Transform(geom, 4326))::json AS geometry\nFROM ${token}\nORDER BY id\nLIMIT 50`
+          : `SELECT ${token}\nFROM bike_parking\nLIMIT 50`;
+        return makeDoc(isTable ? token : "Scratch", sql);
+      }
+      const sql = d.sql;
+      const trimmed = sql.trimEnd();
+      const next = /[,(]$|\s$|\($/.test(trimmed)
+        ? `${sql}${token}`
+        : `${sql}${sql.endsWith("\n") ? "" : " "}${token}`;
+      return { ...d, sql: next };
+    });
+    setActivePatternId(null);
+  };
+
+  const openReferenceFile = async () => {
+    if (!activePattern?.refFile) return;
+    try {
+      const file = await api.sqlFile(activePattern.refFile);
+      applyDocument(makeDoc(titleForSqlFile(file.name), file.sql, { filename: file.name }), null);
+    } catch (err) {
+      setSqlError(err instanceof Error ? err.message : "Could not load SQL file");
+    }
   };
 
   const inspectLayerSql = async (key: keyof Visibility) => {
@@ -1041,45 +1060,18 @@ export default function App() {
     if (!queryDoc) return;
     setSqlBusy(true);
     setSqlError(null);
-    let sql = queryDoc.sql;
     try {
-      if (detectBinds(sql).length > 0) {
-        const filled = fillBindsFromMap(sql, getBindValues());
-        setPreviousDoc(queryDoc);
-        setQueryDoc({ ...queryDoc, sql: filled, savedSql: filled });
-        setFilledNotice(true);
-        sql = filled;
-      } else {
-        setFilledNotice(false);
-      }
+      const sql = fillBindsFromMap(queryDoc.sql, getBindValues());
       const result = await api.runSql(sql, explain);
       setSqlRun(result);
-      if (!explain && result.geojson?.features?.length) {
-        setShowQueryOnMap(true);
-      }
+      applyQueryToMap(queryDoc.sql, result, explain);
     } catch (err) {
       setSqlError(err instanceof Error ? err.message : "Query failed");
       setSqlRun(null);
+      setShowQueryOnMap(false);
     } finally {
       setSqlBusy(false);
     }
-  };
-
-  const loadStarter = (kind: "trees" | "nearest" | "borough") => {
-    const map = mapRef.current;
-    let doc: QueryDoc;
-    if (kind === "trees") {
-      const bbox = map ? boundsToBbox(map.getBounds()) : ([13.38, 52.5, 13.42, 52.53] as BBox);
-      doc = starterTreesInView(bbox);
-    } else if (kind === "nearest") {
-      const center = map?.getCenter();
-      const lon = lastClick?.lon ?? center?.lng ?? BERLIN_CENTER[0];
-      const lat = lastClick?.lat ?? center?.lat ?? BERLIN_CENTER[1];
-      doc = starterNearestKnn(lon, lat);
-    } else {
-      doc = starterBoroughCounts();
-    }
-    requestReplace(doc);
   };
 
   const visibleLegendKeys = (Object.keys(LAYER_META) as (keyof Visibility)[]).filter((key) => {
@@ -1094,69 +1086,60 @@ export default function App() {
       ref={appRef}
       style={{ ["--panel-pct" as string]: `${panelPct}%` }}
     >
-      <aside className="panel">
-        <div className="panel-top">
-          <h1 className="brand">Berlin Amenities Map</h1>
-          <div className="context-bar">
+      <aside className={`panel panel-tab-${taskTab}`}>
+        <header className="panel-chrome">
+          <div className="panel-chrome-row">
+            <h1 className="brand">Berlin Amenities</h1>
             <button
               type="button"
               className="context-borough"
               onClick={() => selectBorough("")}
-              title="Show all boroughs"
+              title="Clear borough filter"
             >
               {selectedDistrictName ?? "All boroughs"}
             </button>
-            <span className="context-mode">
-              {selectedDistrict === "" ? "Viewport data" : "Borough filter"}
-            </span>
           </div>
-
-          <div className="section layers-section">
-            <h2>Layers</h2>
-            {LAYER_GROUPS.map((group) => (
-              <div className="layer-group" key={group.id}>
-                <h3 className="layer-group-title">{group.label}</h3>
-                {group.hint && <p className="hint layer-group-hint">{group.hint}</p>}
-                {group.keys.map((key) => {
-                  const count = layerCounts[key];
-                  const waitingTrees = key === "trees" && treesNeedZoom;
-                  return (
-                    <div className="layer-row" key={key}>
-                      <label className="layer-check">
-                        <input
-                          type="checkbox"
-                          checked={visibility[key]}
-                          onChange={() => setVisibility((v) => ({ ...v, [key]: !v[key] }))}
-                        />
-                        <span
-                          className={`swatch swatch-${LAYER_META[key].kind}`}
-                          style={{ background: LAYER_META[key].swatch }}
-                        />
-                        <span className="layer-label-text">
-                          {LAYER_META[key].label}
-                          {waitingTrees && <span className="layer-state">Zoom to {TREES_MIN_ZOOM}</span>}
-                          {!waitingTrees && count != null && (
-                            <span className="layer-count">{count}</span>
-                          )}
-                        </span>
-                      </label>
-                      {LAYER_SQL_REF[key] && (
-                        <button
-                          type="button"
-                          className="layer-query"
-                          onClick={() => void inspectLayerSql(key)}
-                        >
-                          Query
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-            {layerError && <p className="error">Layer error: {layerError}</p>}
+          <div className="layer-grid" role="group" aria-label="Layers">
+            {(Object.keys(LAYER_META) as (keyof Visibility)[]).map((key) => {
+              const count = layerCounts[key];
+              const waitingTrees = key === "trees" && treesNeedZoom;
+              const on = visibility[key];
+              return (
+                <div key={key} className={`layer-chip${on ? " layer-chip-on" : ""}`}>
+                  <button
+                    type="button"
+                    className="layer-chip-toggle"
+                    aria-pressed={on}
+                    title={waitingTrees ? `Zoom to ${TREES_MIN_ZOOM}` : LAYER_META[key].label}
+                    onClick={() => setVisibility((v) => ({ ...v, [key]: !v[key] }))}
+                  >
+                    <span
+                      className={`swatch swatch-${LAYER_META[key].kind}`}
+                      style={{ background: LAYER_META[key].swatch }}
+                    />
+                    <span className="layer-chip-label">{LAYER_META[key].label}</span>
+                    {waitingTrees ? (
+                      <span className="layer-count">z{TREES_MIN_ZOOM}</span>
+                    ) : count != null ? (
+                      <span className="layer-count">{count}</span>
+                    ) : null}
+                  </button>
+                  {LAYER_SQL_REF[key] && (
+                    <button
+                      type="button"
+                      className="layer-chip-sql"
+                      title={`Open ${key} SQL`}
+                      onClick={() => void inspectLayerSql(key)}
+                    >
+                      SQL
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        </div>
+          {layerError && <p className="error">Layer error: {layerError}</p>}
+        </header>
 
         <div className="task-slot">
           <div className="task-tabs" role="tablist" aria-label="Data pane tasks">
@@ -1208,7 +1191,7 @@ export default function App() {
                 schoolGreen={schoolGreen}
                 selectedDistrict={selectedDistrict}
                 onSelectBorough={selectBorough}
-                onShowQuery={(doc) => {
+                  onShowQuery={(doc) => {
                   const keys = COMPARE_MEASURE_LAYERS[compareMeasure];
                   setVisibility((v) => {
                     const next = { ...v };
@@ -1222,161 +1205,147 @@ export default function App() {
           )}
 
           {taskTab === "query" && (
-            <div className="task-panel" role="tabpanel" id="panel-query" aria-labelledby="tab-query">
-              {sqlOffer &&
+            <div
+              className="task-panel query-grid"
+              role="tabpanel"
+              id="panel-query"
+              aria-labelledby="tab-query"
+            >
+              {(sqlOffer &&
                 (!queryDoc ||
                   queryDoc.filename !== sqlOffer.filename ||
-                  queryDoc.sql !== sqlOffer.sql) && (
-                  <div className="sql-offer">
-                    <span>Nearest lookup has a query</span>
-                    <button type="button" className="secondary starter-btn" onClick={showNearestQuery}>
-                      Show it
-                    </button>
-                  </div>
-                )}
-
-              {pendingReplace && (
-                <div className="sql-replace-confirm">
-                  <span>Replace the edited query?</span>
-                  <div className="nearby-actions">
-                    <button
-                      type="button"
-                      className="starter-btn"
-                      onClick={() => applyDocument(pendingReplace)}
-                    >
-                      Replace
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary starter-btn"
-                      onClick={() => setPendingReplace(null)}
-                    >
-                      Keep editing
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div className="sql-starters">
-                <button
-                  type="button"
-                  className="secondary starter-btn"
-                  onClick={() => loadStarter("trees")}
-                >
-                  Trees in view
-                </button>
-                <button
-                  type="button"
-                  className="secondary starter-btn"
-                  onClick={() => loadStarter("nearest")}
-                >
-                  Nearest KNN
-                </button>
-                <button
-                  type="button"
-                  className="secondary starter-btn"
-                  onClick={() => loadStarter("borough")}
-                >
-                  Borough counts
-                </button>
-              </div>
-
-              {!queryDoc && (
-                <p className="hint">Open a layer Query, Show query from Nearby / Compare, or pick a starter.</p>
-              )}
-
-              {queryDoc && (
-                <div className="query-doc">
-                  <div className="query-doc-head">
-                    <h3 className="query-doc-title">{queryDoc.title}</h3>
-                    {queryDoc.filename && (
-                      <div className="query-doc-file">{queryDoc.filename}</div>
+                  queryDoc.sql !== sqlOffer.sql)) ||
+              pendingReplace ? (
+                <div className="query-alerts">
+                  {sqlOffer &&
+                    (!queryDoc ||
+                      queryDoc.filename !== sqlOffer.filename ||
+                      queryDoc.sql !== sqlOffer.sql) && (
+                      <div className="sql-offer">
+                        <span>Nearest query ready</span>
+                        <button
+                          type="button"
+                          className="secondary starter-btn"
+                          onClick={showNearestQuery}
+                        >
+                          Open
+                        </button>
+                      </div>
                     )}
-                    {queryDirty && <span className="query-doc-dirty">Edited</span>}
-                  </div>
-                  {(queryDoc.caveat || queryCatalog) && (
-                    <div className="catalog-card">
-                      {queryDoc.caveat && <div className="caveat">{queryDoc.caveat}</div>}
-                      {queryCatalog && (
-                        <>
-                          <div>Imported: {queryCatalog.imported_at ?? "—"}</div>
-                          <div>CRS: EPSG:{queryCatalog.srid}</div>
-                          {queryCatalog.license_text && <div>License: {queryCatalog.license_text}</div>}
-                          {queryCatalog.coverage_caveat &&
-                            queryCatalog.coverage_caveat !== queryDoc.caveat && (
-                              <div className="caveat">{queryCatalog.coverage_caveat}</div>
-                            )}
-                        </>
-                      )}
+                  {pendingReplace && (
+                    <div className="sql-replace-confirm">
+                      <span>Replace edited SQL?</span>
+                      <div className="nearby-actions">
+                        <button
+                          type="button"
+                          className="starter-btn"
+                          onClick={() => applyDocument(pendingReplace, activePatternId)}
+                        >
+                          Replace
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary starter-btn"
+                          onClick={() => setPendingReplace(null)}
+                        >
+                          Keep
+                        </button>
+                      </div>
                     </div>
                   )}
-                  {queryBinds.length > 0 && (
-                    <dl className="sql-params bind-strip">
-                      {queryBinds.map((key) => (
-                        <div key={key}>
-                          <dt>:{key}</dt>
-                          <dd>{formatBindValue(getBindValues()[key] ?? null)}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  )}
-                  <textarea
-                    className="sql-editor"
-                    value={queryDoc.sql}
-                    onChange={(e) =>
-                      setQueryDoc((d) => (d ? { ...d, sql: e.target.value } : d))
-                    }
-                    rows={10}
-                    spellCheck={false}
-                    aria-label="SQL document"
-                  />
-                  <div className="sql-actions">
+                </div>
+              ) : null}
+
+              <div className="query-nav">
+                <div className="query-patterns" aria-label="Patterns">
+                  {PATTERNS.map((p) => (
                     <button
+                      key={p.id}
                       type="button"
-                      disabled={sqlBusy}
-                      onClick={() => void runDocument(false)}
+                      className={`pattern-chip${activePatternId === p.id ? " pattern-chip-active" : ""}`}
+                      title={p.blurb}
+                      onClick={() => openPattern(p.id)}
                     >
-                      Run
+                      {p.title}
                     </button>
+                  ))}
+                  <button
+                    type="button"
+                    className={`pattern-chip pattern-chip-meta${glossaryOpen ? " pattern-chip-active" : ""}`}
+                    aria-pressed={glossaryOpen}
+                    onClick={() => setGlossaryOpen((o) => !o)}
+                  >
+                    Glossary
+                  </button>
+                </div>
+              </div>
+
+              <div className="query-main">
+                <div className="query-doc-head">
+                  <h3 className="query-doc-title">{queryDoc?.title ?? "SQL"}</h3>
+                  {queryDirty && <span className="query-doc-dirty">Edited</span>}
+                  {queryBinds.length > 0 && (
+                    <span className="bind-inline" title="Filled from map at Run">
+                      {queryBinds.map((k) => `:${k}`).join(" ")}
+                    </span>
+                  )}
+                </div>
+                {activePattern && <p className="query-analyze">{activePattern.analyze}</p>}
+                <textarea
+                  className="sql-editor"
+                  value={queryDoc?.sql ?? ""}
+                  placeholder="Pick a pattern, or write SELECT …"
+                  onChange={(e) => {
+                    const sql = e.target.value;
+                    setActivePatternId(null);
+                    setQueryDoc((d) => (d ? { ...d, sql } : makeDoc("Scratch", sql)));
+                  }}
+                  spellCheck={false}
+                  aria-label="SQL editor"
+                />
+                <div className="sql-actions">
+                  <button
+                    type="button"
+                    disabled={sqlBusy || !queryDoc?.sql.trim()}
+                    onClick={() => void runDocument(false)}
+                  >
+                    Run
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={sqlBusy || !queryDoc?.sql.trim()}
+                    onClick={() => void runDocument(true)}
+                  >
+                    Explain
+                  </button>
+                  {activePattern?.refFile && (
                     <button
                       type="button"
                       className="secondary"
                       disabled={sqlBusy}
-                      onClick={() => void runDocument(true)}
+                      onClick={() => void openReferenceFile()}
                     >
-                      Explain
+                      App file
                     </button>
-                    {queryBinds.length > 0 && (
-                      <button
-                        type="button"
-                        className="secondary"
-                        disabled={sqlBusy}
-                        onClick={fillFromMap}
-                      >
-                        Fill from map
-                      </button>
-                    )}
-                    {previousDoc && (
-                      <button type="button" className="secondary" onClick={goBackDocument}>
-                        Back
-                      </button>
-                    )}
-                    {sqlRun?.geojson?.features?.length ? (
-                      <label className="layer-check">
-                        <input
-                          type="checkbox"
-                          checked={showQueryOnMap}
-                          onChange={(e) => setShowQueryOnMap(e.target.checked)}
-                        />
-                        Show on map
-                      </label>
-                    ) : null}
-                  </div>
-                  {filledNotice && <p className="hint">Filled binds from the map.</p>}
-                  {sqlError && <p className="error">{sqlError}</p>}
-                  {sqlRun && <SqlResultPanel result={sqlRun} />}
+                  )}
+                  {sqlRun?.geojson?.features?.length ? (
+                    <label className="layer-check">
+                      <input
+                        type="checkbox"
+                        checked={showQueryOnMap}
+                        onChange={(e) => setShowQueryOnMap(e.target.checked)}
+                      />
+                      Map
+                    </label>
+                  ) : null}
                 </div>
-              )}
+                {sqlError && <p className="error">{sqlError}</p>}
+              </div>
+
+              <div className="query-results">
+                {sqlRun ? <SqlResultPanel result={sqlRun} /> : <p className="hint">Results appear here.</p>}
+              </div>
             </div>
           )}
         </div>
@@ -1435,6 +1404,14 @@ export default function App() {
         )}
         <div className="status">{status}</div>
       </div>
+      {glossaryOpen && (
+        <GlossaryDialog
+          tables={SCHEMA_TABLES}
+          highlight={activePattern?.tables ?? []}
+          onInsert={insertIntoSql}
+          onClose={() => setGlossaryOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1452,23 +1429,20 @@ function NearestPanel({
   const maxDist = hits.length > 0 ? Math.max(...hits.map((h) => h.distance_m), 1) : 1;
 
   return (
-    <div className="analysis-card">
+    <div className="analysis-card nearby-card">
       <div className="nearby-head">
-        <h3>
-          {result.lon.toFixed(5)}, {result.lat.toFixed(5)}
-        </h3>
+        <h3 className="nearby-title">Nearest</h3>
         <div className="nearby-actions">
           {onShowQuery && (
             <button type="button" className="secondary starter-btn" onClick={onShowQuery}>
-              Show query
+              SQL
             </button>
           )}
           <button type="button" className="secondary starter-btn" onClick={onClear}>
-            Clear pin
+            Clear
           </button>
         </div>
       </div>
-      <p className="caveat">{result.caveat}</p>
       {hits.length > 0 ? (
         <ul className="hit-list hit-list-bars">
           {hits.map((n, i) => (
@@ -1490,9 +1464,112 @@ function NearestPanel({
           ))}
         </ul>
       ) : (
-        <p className="empty">No amenity rows in the database yet.</p>
+        <p className="empty">No amenity rows yet.</p>
       )}
     </div>
+  );
+}
+
+function GlossaryDialog({
+  tables,
+  highlight,
+  onInsert,
+  onClose,
+}: {
+  tables: SchemaTable[];
+  highlight: string[];
+  onInsert: (token: string) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const closing = useRef(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.showModal();
+    return () => {
+      closing.current = true;
+      if (el.open) el.close();
+    };
+  }, []);
+
+  return (
+    <dialog
+      ref={ref}
+      className="glossary-dialog"
+      aria-labelledby="glossary-title"
+      onClose={() => {
+        if (!closing.current) onClose();
+      }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="glossary-dialog-card">
+        <header className="glossary-dialog-head">
+          <h2 id="glossary-title">Tables</h2>
+          <button type="button" className="secondary starter-btn" onClick={onClose}>
+            Close
+          </button>
+        </header>
+        <div className="glossary-dialog-body">
+          <SchemaGlossary tables={tables} highlight={highlight} onInsert={onInsert} />
+        </div>
+      </div>
+    </dialog>
+  );
+}
+
+function SchemaGlossary({
+  tables,
+  highlight = [],
+  onInsert,
+}: {
+  tables: SchemaTable[];
+  highlight?: string[];
+  onInsert: (token: string) => void;
+}) {
+  if (!tables.length) return null;
+  const hi = new Set(highlight);
+  return (
+    <dl className="glossary-list">
+      {tables.map((t) => (
+        <div
+          className={`glossary-entry${hi.has(t.table) ? " glossary-entry-hot" : ""}`}
+          key={t.table}
+        >
+          <dt>
+            <button
+              type="button"
+              className="schema-chip schema-chip-table"
+              title={`Insert ${t.table}`}
+              onClick={() => onInsert(t.table)}
+            >
+              {t.table}
+            </button>
+            <span className="glossary-entry-label">{t.label}</span>
+          </dt>
+          <dd>
+            <p className="glossary-about">{t.about}</p>
+            <div className="schema-cheat-cols">
+              {t.columns.map((c) => (
+                <button
+                  key={c.name}
+                  type="button"
+                  className="schema-chip"
+                  title={c.note ? `${c.name} (${c.note})` : `Insert ${c.name}`}
+                  onClick={() => onInsert(c.name)}
+                >
+                  <code>{c.name}</code>
+                  {c.note && <span className="schema-chip-note">{c.note}</span>}
+                </button>
+              ))}
+            </div>
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -1630,7 +1707,7 @@ function ComparePanel({
   };
 
   return (
-    <div className="analysis-card">
+    <div className="analysis-card compare-card">
       <div className="compare-controls">
         <label className="compare-measure">
           <span className="sr-only">Measure</span>
@@ -1647,51 +1724,52 @@ function ComparePanel({
         </label>
         {analysis?.sql_ref && (
           <button type="button" className="secondary starter-btn" onClick={() => void showQuery()}>
-            Show query
+            SQL
           </button>
         )}
       </div>
-      {analysis?.caveat && <p className="caveat">{analysis.caveat}</p>}
-      <button
-        type="button"
-        className={`compare-row${!selectedDistrict ? " compare-row-active" : ""}`}
-        onClick={() => onSelectBorough("")}
-      >
-        <span className="compare-name">All boroughs</span>
-        <span className="compare-value">Viewport</span>
-      </button>
-      {!analysis && <p className="hint">Loading comparison…</p>}
-      {rows.map((r) => {
-        const pct = r.value == null ? 0 : (r.value / maxValue) * 100;
-        const label =
-          r.value == null
-            ? "—"
-            : measure === "green_pct"
-              ? `${r.value.toFixed(1)}%`
-              : measure === "school_park"
-                ? `${r.value.toFixed(0)} m`
-                : String(r.value);
-        return (
-          <button
-            type="button"
-            key={r.name}
-            className={`compare-row${selectedDistrict === r.id ? " compare-row-active" : ""}`}
-            onClick={() => (typeof r.id === "number" ? onSelectBorough(r.id) : onSelectBorough(""))}
-          >
-            <span className="compare-name">
-              {r.name}
-              {r.secondary && <span className="compare-secondary">{r.secondary}</span>}
-            </span>
-            <span className="pct-cell compare-bar">
-              <span className="pct-bar" style={{ width: `${Math.min(pct, 100)}%` }} />
-              <span className="pct-label">
-                {label}
-                {unit && measure !== "green_pct" && measure !== "school_park" ? ` ${unit}` : ""}
+      <div className="compare-grid">
+        <button
+          type="button"
+          className={`compare-row${!selectedDistrict ? " compare-row-active" : ""}`}
+          onClick={() => onSelectBorough("")}
+        >
+          <span className="compare-name">All boroughs</span>
+          <span className="compare-value">Viewport</span>
+        </button>
+        {!analysis && <p className="hint">Loading…</p>}
+        {rows.map((r) => {
+          const pct = r.value == null ? 0 : (r.value / maxValue) * 100;
+          const label =
+            r.value == null
+              ? "—"
+              : measure === "green_pct"
+                ? `${r.value.toFixed(1)}%`
+                : measure === "school_park"
+                  ? `${r.value.toFixed(0)} m`
+                  : String(r.value);
+          return (
+            <button
+              type="button"
+              key={r.name}
+              className={`compare-row${selectedDistrict === r.id ? " compare-row-active" : ""}`}
+              onClick={() => (typeof r.id === "number" ? onSelectBorough(r.id) : onSelectBorough(""))}
+            >
+              <span className="compare-name">
+                {r.name}
+                {r.secondary && <span className="compare-secondary">{r.secondary}</span>}
               </span>
-            </span>
-          </button>
-        );
-      })}
+              <span className="pct-cell compare-bar">
+                <span className="pct-bar" style={{ width: `${Math.min(pct, 100)}%` }} />
+                <span className="pct-label">
+                  {label}
+                  {unit && measure !== "green_pct" && measure !== "school_park" ? ` ${unit}` : ""}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

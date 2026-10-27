@@ -19,7 +19,7 @@ Click the map to see the nearest park, playground, street tree, bike rack, EV ch
 1. Show mapped amenity layers from open Berlin inventories.
 2. Point nearest-amenity and borough density analyses in PostGIS.
 3. Keep provenance and coverage caveats visible.
-4. Demonstrate schema, spatial SQL, GiST, and KNN workflows.
+4. Explore Berlin inventories through the Query playground: schema glossary, ready SQL patterns, Run/Explain against the live map.
 
 ## Non-goals
 

@@ -71,4 +71,4 @@ cd backend && source .venv/bin/activate
 pytest -q
 ```
 
-Visible SQL: [backend/sql/](backend/sql/) — also inspect and run SELECT queries in the app sidebar (SQL panel / playground). Smoke checklist: [docs/smoke-test.md](docs/smoke-test.md).
+Visible SQL: [backend/sql/](backend/sql/) — explore with ready Patterns, the schema Glossary, and free SQL in the Query tab. Smoke checklist: [docs/smoke-test.md](docs/smoke-test.md).
