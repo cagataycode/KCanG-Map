@@ -8,12 +8,14 @@ Primary UX: map of **Berlin open-data amenities** + click-to-nearest. Distances 
 - Amenities: street trees, bike parking, EV chargers, drinking fountains, bathing waters, public toilets, playgrounds, sports facilities (toggleable).
 - Trees are **off by default** and only fetch/render at **zoom ≥ 14** with bbox and/or borough filter — never dump the full city inventory to the browser.
 - Click map → Nearby tab (one hit per layer, distances).
-- Sidebar: grouped layers stay visible; a task slot switches among **Nearby**, **Compare**, and **Query**. Amenity counts, green cover, and school–park proximity live under Compare (one measure at a time). SQL appears when the user pins it.
+- Sidebar is a fixed viewport grid (no pane scroll): compact layer chips on top; task slot switches **Nearby** / **Compare** / **Query**. Compare holds amenity counts, green cover, and school–park proximity (one measure at a time).
 
-## SQL learning
+## SQL playground
 
-- The Query tab is one document: the statement opened from a layer **Query** or **Show query** (`GET /sql/{name}`, `sql_ref` on responses). Map pans and clicks do not overwrite it.
-- **Fill from map** substitutes named binds (`:minx`, `:lon`, `:district_id`, …) from the viewport, last click, and borough filter. **Run** / **Explain** fill remaining binds if needed, then call the SELECT-only playground (`POST /sql/run`); they do not rename the document. Optional map overlay when results include GeoJSON geometry.
+- Query is an **explore tool** for Berlin open data: pick a ready **pattern** (complete SELECT), edit freely, **Run** / **Explain**.
+- **Glossary** lists every table and field (PK/FK notes); click a name to insert it into the editor. Patterns that use specific tables are highlighted in the glossary.
+- Patterns live in `frontend/src/exercises.ts` (bbox, KNN nearest, joins, borough counts, park cover, trees in view). Layer **Query** / **Show query** also load into the same editor.
+- Named binds (`:minx`, `:lon`, …) stay in the text and fill from the map at run time. **Run** syncs layer filters to tables in the SQL and draws GeoJSON on the map.
 
 ## Analyses
 
