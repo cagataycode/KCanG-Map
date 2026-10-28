@@ -12,6 +12,12 @@ nearest_trees AS (
   ORDER BY t.geom <-> pt.geom
   LIMIT 1
 ),
+nearest_park_trees AS (
+  SELECT 'park_trees'::text AS layer, pt_t.id, pt_t.name, ST_Distance(pt_t.geom, pt.geom) AS distance_m
+  FROM park_trees pt_t, pt
+  ORDER BY pt_t.geom <-> pt.geom
+  LIMIT 1
+),
 nearest_bike AS (
   SELECT 'bike_parking'::text AS layer, b.id, b.name, ST_Distance(b.geom, pt.geom) AS distance_m
   FROM bike_parking b, pt
@@ -37,9 +43,9 @@ nearest_bathing AS (
   LIMIT 1
 ),
 nearest_toilets AS (
-  SELECT 'toilets'::text AS layer, t.id, t.name, ST_Distance(t.geom, pt.geom) AS distance_m
-  FROM toilets t, pt
-  ORDER BY t.geom <-> pt.geom
+  SELECT 'toilets'::text AS layer, o.id, o.name, ST_Distance(o.geom, pt.geom) AS distance_m
+  FROM toilets o, pt
+  ORDER BY o.geom <-> pt.geom
   LIMIT 1
 ),
 nearest_playgrounds AS (
@@ -49,9 +55,33 @@ nearest_playgrounds AS (
   LIMIT 1
 ),
 nearest_sports AS (
-  SELECT 'sports_facilities'::text AS layer, s.id, s.name, ST_Distance(s.geom, pt.geom) AS distance_m
-  FROM sports_facilities s, pt
-  ORDER BY s.geom <-> pt.geom
+  SELECT 'sports_facilities'::text AS layer, sf.id, sf.name, ST_Distance(sf.geom, pt.geom) AS distance_m
+  FROM sports_facilities sf, pt
+  ORDER BY sf.geom <-> pt.geom
+  LIMIT 1
+),
+nearest_kitas AS (
+  SELECT 'kitas'::text AS layer, k.id, k.name, ST_Distance(k.geom, pt.geom) AS distance_m
+  FROM kitas k, pt
+  ORDER BY k.geom <-> pt.geom
+  LIMIT 1
+),
+nearest_hospitals AS (
+  SELECT 'hospitals'::text AS layer, h.id, h.name, ST_Distance(h.geom, pt.geom) AS distance_m
+  FROM hospitals h, pt
+  ORDER BY h.geom <-> pt.geom
+  LIMIT 1
+),
+nearest_cemeteries AS (
+  SELECT 'cemeteries'::text AS layer, c.id, c.name, ST_Distance(c.geom, pt.geom) AS distance_m
+  FROM cemeteries c, pt
+  ORDER BY c.geom <-> pt.geom
+  LIMIT 1
+),
+nearest_pr AS (
+  SELECT 'park_and_ride'::text AS layer, pr.id, pr.name, ST_Distance(pr.geom, pt.geom) AS distance_m
+  FROM park_and_ride pr, pt
+  ORDER BY pr.geom <-> pt.geom
   LIMIT 1
 ),
 nearest_green AS (
@@ -62,6 +92,7 @@ nearest_green AS (
 ),
 nearest AS (
   SELECT * FROM nearest_trees
+  UNION ALL SELECT * FROM nearest_park_trees
   UNION ALL SELECT * FROM nearest_bike
   UNION ALL SELECT * FROM nearest_ev
   UNION ALL SELECT * FROM nearest_fountains
@@ -69,6 +100,10 @@ nearest AS (
   UNION ALL SELECT * FROM nearest_toilets
   UNION ALL SELECT * FROM nearest_playgrounds
   UNION ALL SELECT * FROM nearest_sports
+  UNION ALL SELECT * FROM nearest_kitas
+  UNION ALL SELECT * FROM nearest_hospitals
+  UNION ALL SELECT * FROM nearest_cemeteries
+  UNION ALL SELECT * FROM nearest_pr
   UNION ALL SELECT * FROM nearest_green
 )
 SELECT jsonb_build_object(

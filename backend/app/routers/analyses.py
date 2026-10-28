@@ -28,6 +28,7 @@ def nearest_amenities(
         "title": "Nearest amenities",
         "inputs": [
             "trees",
+            "park_trees",
             "bike_parking",
             "ev_chargers",
             "drinking_fountains",
@@ -35,6 +36,10 @@ def nearest_amenities(
             "toilets",
             "playgrounds",
             "sports_facilities",
+            "kitas",
+            "hospitals",
+            "cemeteries",
+            "park_and_ride",
             "green_spaces",
         ],
         "operation": (
@@ -61,6 +66,7 @@ def amenity_density_by_borough(db: Session = Depends(get_db)) -> dict[str, Any]:
         "inputs": [
             "districts",
             "trees",
+            "park_trees",
             "bike_parking",
             "ev_chargers",
             "drinking_fountains",
@@ -68,6 +74,10 @@ def amenity_density_by_borough(db: Session = Depends(get_db)) -> dict[str, Any]:
             "toilets",
             "playgrounds",
             "sports_facilities",
+            "kitas",
+            "hospitals",
+            "cemeteries",
+            "park_and_ride",
         ],
         "operation": "COUNT features per district_id for each amenity layer",
         "units": {"count": "features"},

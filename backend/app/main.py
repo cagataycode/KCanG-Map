@@ -1,5 +1,8 @@
+from typing import Any
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.db import check_db
@@ -20,9 +23,9 @@ app.include_router(analyses.router)
 app.include_router(sql.router)
 
 
-@app.get("/health")
-def health() -> dict:
+@app.get("/health", response_model=None)
+def health() -> dict[str, Any] | JSONResponse:
     try:
         return {"status": "ok", **check_db()}
     except Exception as exc:  # noqa: BLE001
-        return {"status": "degraded", "error": str(exc)}
+        return JSONResponse(status_code=503, content={"status": "degraded", "error": str(exc)})

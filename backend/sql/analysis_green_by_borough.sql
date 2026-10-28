@@ -1,4 +1,4 @@
--- Mapped public green by borough (parks/green polygons only; geometry area).
+-- Mapped public green by borough (parks/green polygons only — geometry area).
 -- Uses centroid assignment via district_id set at import.
 SELECT
   d.id AS district_id,
