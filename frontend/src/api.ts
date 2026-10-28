@@ -1,3 +1,5 @@
+import { LAYER_PATHS, LayerSlug } from "./layers";
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 
 const responseCache = new Map<string, { expires: number; data: unknown }>();
@@ -108,6 +110,8 @@ export type NearestAmenities = {
 
 export type SqlFile = { name: string; sql: string };
 
+export type LayerSql = { name: string; slug: string; sql: string };
+
 export type SqlRunResult = {
   explain: boolean;
   plan: string | null;
@@ -156,30 +160,9 @@ function layerQuery(bbox?: string, districtId?: number): string {
 export const api = {
   layers: () => getJson<LayerMeta[]>("/layers", { ttlMs: 60_000 }),
   districtsList: () => getJson<DistrictListItem[]>("/districts/list", { ttlMs: 60_000 }),
-  districts: (bbox?: string) =>
-    getJson<FeatureCollection>(`/districts${bbox ? `?bbox=${bbox}` : ""}`, { ttlMs: 30_000 }),
-  neighborhoods: (bbox?: string) =>
-    getJson<FeatureCollection>(`/neighborhoods${bbox ? `?bbox=${bbox}` : ""}`, { ttlMs: 30_000 }),
-  greenSpaces: (bbox?: string, districtId?: number) =>
-    getJson<FeatureCollection>(`/green-spaces${layerQuery(bbox, districtId)}`),
-  schools: (bbox?: string, districtId?: number) =>
-    getJson<FeatureCollection>(`/schools${layerQuery(bbox, districtId)}`),
-  trees: (bbox?: string, districtId?: number) =>
-    getJson<FeatureCollection>(`/trees${layerQuery(bbox, districtId)}`),
-  bikeParking: (bbox?: string, districtId?: number) =>
-    getJson<FeatureCollection>(`/bike-parking${layerQuery(bbox, districtId)}`),
-  evChargers: (bbox?: string, districtId?: number) =>
-    getJson<FeatureCollection>(`/ev-chargers${layerQuery(bbox, districtId)}`),
-  drinkingFountains: (bbox?: string, districtId?: number) =>
-    getJson<FeatureCollection>(`/drinking-fountains${layerQuery(bbox, districtId)}`),
-  bathingWaters: (bbox?: string, districtId?: number) =>
-    getJson<FeatureCollection>(`/bathing-waters${layerQuery(bbox, districtId)}`),
-  toilets: (bbox?: string, districtId?: number) =>
-    getJson<FeatureCollection>(`/toilets${layerQuery(bbox, districtId)}`),
-  playgrounds: (bbox?: string, districtId?: number) =>
-    getJson<FeatureCollection>(`/playgrounds${layerQuery(bbox, districtId)}`),
-  sportsFacilities: (bbox?: string, districtId?: number) =>
-    getJson<FeatureCollection>(`/sports-facilities${layerQuery(bbox, districtId)}`),
+  layer: (slug: LayerSlug, bbox?: string, districtId?: number) =>
+    getJson<FeatureCollection>(`${LAYER_PATHS[slug]}${layerQuery(bbox, districtId)}`),
+  layerSql: (slug: LayerSlug) => getJson<LayerSql>(`/layers/${slug}/sql`, { ttlMs: 60_000 }),
   /** Point checks are not cached — each click is a distinct query. */
   nearestAmenities: (lon: number, lat: number) =>
     getJson<NearestAmenities>(`/analyses/nearest-amenities?lon=${lon}&lat=${lat}`, { cache: false }),

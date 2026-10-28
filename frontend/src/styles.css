@@ -901,7 +901,8 @@ button.secondary {
   grid-auto-rows: max-content;
   align-content: start;
   gap: 0.25rem;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  max-height: 7.75rem;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
@@ -967,7 +968,7 @@ button.secondary {
 }
 
 .query-results {
-  flex: 0 1 9rem;
+  flex: 1 1 9rem;
   min-height: 4.25rem;
   min-width: 0;
   overflow: auto;
