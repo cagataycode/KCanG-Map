@@ -4,9 +4,9 @@ Primary UX: map of **Berlin open-data amenities** + click-to-nearest. Distances 
 
 ## Map and layers
 
-- Context: districts, neighborhoods (Ortsteile), green spaces (parks), schools.
-- Amenities: street trees, bike parking, EV chargers, drinking fountains, bathing waters, public toilets, playgrounds, sports facilities (toggleable).
-- Trees are **off by default** and only fetch/render at **zoom ≥ 14** with bbox and/or borough filter — never dump the full city inventory to the browser.
+- Context: districts, neighborhoods (Ortsteile), green spaces (parks), schools, cemeteries.
+- Amenities: street trees, park trees, bike parking, EV chargers, drinking fountains, bathing waters, public toilets, playgrounds, sports facilities, daycare (Kitas), hospitals, Park & Ride (toggleable).
+- Street and park trees are **off by default** and only fetch/render at **zoom ≥ 15** with a tight bbox and/or borough filter (capped server-side) — never dump the full city inventory to the browser.
 - Click map → Nearby tab (one hit per layer, distances).
 - Sidebar is a fixed viewport grid (no pane scroll): compact layer chips on top; task slot switches **Nearby** / **Compare** / **Query**. Compare holds amenity counts, green cover, and school–park proximity (one measure at a time).
 

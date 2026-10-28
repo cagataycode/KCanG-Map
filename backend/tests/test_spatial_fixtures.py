@@ -1,12 +1,14 @@
 """Known-answer fixtures for EPSG:25833 metric ops and KNN distance."""
 
-from sqlalchemy import create_engine, text
+import pytest
+from sqlalchemy import text
 
-from app.config import settings
+from app.db import engine
+
+pytestmark = pytest.mark.db
 
 
 def test_metric_distance_epsg25833():
-    engine = create_engine(settings.database_url)
     with engine.connect() as conn:
         dist = conn.execute(
             text(
@@ -23,7 +25,6 @@ def test_metric_distance_epsg25833():
 
 
 def test_metric_area_epsg25833():
-    engine = create_engine(settings.database_url)
     with engine.connect() as conn:
         area = conn.execute(
             text(
@@ -43,7 +44,6 @@ def test_metric_area_epsg25833():
 
 def test_knn_nearest_of_two_points():
     """KNN (<->) picks the closer of two amenity points."""
-    engine = create_engine(settings.database_url)
     with engine.connect() as conn:
         dist = conn.execute(
             text(
@@ -69,7 +69,6 @@ def test_knn_nearest_of_two_points():
 
 def test_point_on_surface_multipoint():
     """MultiPoint sites (e.g. EV chargers) reduce to a usable point."""
-    engine = create_engine(settings.database_url)
     with engine.connect() as conn:
         gtype = conn.execute(
             text(

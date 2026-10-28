@@ -1,0 +1,25 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "source_id": "plan:1",
+        "kkh_standort": "Charité Campus Mitte",
+        "hospital_type": "plan",
+        "name": "Charité Campus Mitte"
+      },
+      "geometry": { "type": "Point", "coordinates": [13.377, 52.526] }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "source_id": "other:1",
+        "name": "Sample Specialty Clinic",
+        "hospital_type": "other",
+        "fachabteilungen": "Psychotherapie"
+      },
+      "geometry": { "type": "Point", "coordinates": [13.33, 52.505] }
+    }
+  ]
+}

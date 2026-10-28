@@ -22,8 +22,20 @@ _FORBIDDEN = re.compile(
     r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|COPY|"
     r"CALL|EXECUTE|DO|VACUUM|ANALYZE|REINDEX|CLUSTER|COMMENT|SECURITY|"
     r"SET\s+ROLE|SET\s+SESSION|RESET|LOAD|LISTEN|NOTIFY|PREPARE|DEALLOCATE|"
-    r"LOCK|UNLISTEN|DISCARD|REASSIGN|REFRESH\s+MATERIALIZED)\b",
+    r"LOCK|UNLISTEN|DISCARD|REASSIGN|REFRESH\s+MATERIALIZED|INTO|"
+    r"FOR\s+UPDATE|FOR\s+NO\s+KEY\s+UPDATE|FOR\s+SHARE|FOR\s+KEY\s+SHARE|"
+    r"SET_CONFIG|PG_READ_FILE|PG_LS_DIR|PG_STAT_FILE|PG_TERMINATE_BACKEND|"
+    r"PG_CANCEL_BACKEND|LO_IMPORT|LO_EXPORT)\b",
     re.IGNORECASE,
+)
+# Comments and string/quoted-identifier literals: stripped before the forbidden
+# scan so e.g. 'not a delete' or a comment mentioning DELETE stays allowed.
+_COMMENTS_AND_LITERALS = re.compile(
+    r"--[^\n]*"  # line comment
+    r"|/\*.*?\*/"  # block comment
+    r"|'(?:[^']|'')*'"  # string literal with '' escape
+    r'|"(?:[^"]|"")*"',  # quoted identifier with "" escape
+    re.DOTALL,
 )
 _NAME_OK = re.compile(r"^[a-z0-9_]+\.sql$")
 
@@ -48,12 +60,20 @@ def _validate_select(sql: str) -> str:
     cleaned = sql.strip().rstrip(";").strip()
     if not cleaned:
         raise HTTPException(status_code=400, detail="Empty SQL")
-    if ";" in cleaned:
+    # Strip comments/literals before multi-statement + verb checks so a
+    # semicolon or "DELETE" inside a comment does not reject a valid SELECT.
+    scan = _COMMENTS_AND_LITERALS.sub(" ", cleaned)
+    if ";" in scan:
         raise HTTPException(status_code=400, detail="Only a single statement is allowed")
-    if _FORBIDDEN.search(cleaned):
+    if _FORBIDDEN.search(scan):
         raise HTTPException(status_code=400, detail="Only SELECT / WITH … SELECT is allowed")
-    head = re.sub(r"^/\*.*?\*/", "", cleaned, flags=re.DOTALL).lstrip()
-    head = re.sub(r"^--[^\n]*\n", "", head).lstrip()
+    head = cleaned
+    while True:
+        nxt = re.sub(r"^/\*.*?\*/", "", head, count=1, flags=re.DOTALL).lstrip()
+        nxt = re.sub(r"^--[^\n]*(?:\n|$)", "", nxt, count=1).lstrip()
+        if nxt == head:
+            break
+        head = nxt
     upper = head.upper()
     if not (upper.startswith("SELECT") or upper.startswith("WITH")):
         raise HTTPException(status_code=400, detail="Query must start with SELECT or WITH")

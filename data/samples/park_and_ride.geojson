@@ -1,0 +1,27 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 1,
+        "anlagennam": "Sample P+R Nord",
+        "bahnhofsna": "S Sample",
+        "art": "P+R",
+        "facility_type": "P+R"
+      },
+      "geometry": { "type": "Point", "coordinates": [13.36, 52.54] }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 2,
+        "anlagennam": "Sample P+R Süd",
+        "bahnhofsna": "U Sample",
+        "art": "P+R",
+        "facility_type": "P+R"
+      },
+      "geometry": { "type": "Point", "coordinates": [13.45, 52.48] }
+    }
+  ]
+}

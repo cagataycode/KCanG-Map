@@ -2,6 +2,7 @@ from datetime import date, datetime
 
 from geoalchemy2 import Geometry
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -24,6 +25,10 @@ class DatasetCatalog(Base):
     coverage_caveat: Mapped[str | None] = mapped_column(Text)
 
 
+def _attrs_col() -> Mapped[dict]:
+    return mapped_column(JSONB, nullable=False, server_default="{}")
+
+
 class District(Base):
     __tablename__ = "districts"
 
@@ -31,6 +36,7 @@ class District(Base):
     official_id: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
+    attrs: Mapped[dict] = _attrs_col()
     geom = mapped_column(Geometry(geometry_type="MULTIPOLYGON", srid=25833), nullable=False)
 
 
@@ -42,6 +48,7 @@ class Neighborhood(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
     district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    attrs: Mapped[dict] = _attrs_col()
     geom = mapped_column(Geometry(geometry_type="MULTIPOLYGON", srid=25833), nullable=False)
 
 
@@ -54,6 +61,7 @@ class GreenSpace(Base):
     space_type: Mapped[str | None] = mapped_column(String(128))
     catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
     district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    attrs: Mapped[dict] = _attrs_col()
     geom = mapped_column(Geometry(geometry_type="MULTIPOLYGON", srid=25833), nullable=False)
 
 
@@ -66,6 +74,7 @@ class School(Base):
     school_type: Mapped[str | None] = mapped_column(String(128))
     catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
     district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    attrs: Mapped[dict] = _attrs_col()
     geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)
 
 
@@ -78,6 +87,7 @@ class Tree(Base):
     species: Mapped[str | None] = mapped_column(String(128))
     catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
     district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    attrs: Mapped[dict] = _attrs_col()
     geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)
 
 
@@ -90,6 +100,7 @@ class BikeParking(Base):
     facility_type: Mapped[str | None] = mapped_column(String(128))
     catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
     district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    attrs: Mapped[dict] = _attrs_col()
     geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)
 
 
@@ -102,6 +113,7 @@ class EvCharger(Base):
     charger_type: Mapped[str | None] = mapped_column(String(128))
     catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
     district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    attrs: Mapped[dict] = _attrs_col()
     geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)
 
 
@@ -114,6 +126,7 @@ class DrinkingFountain(Base):
     fountain_type: Mapped[str | None] = mapped_column(String(128))
     catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
     district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    attrs: Mapped[dict] = _attrs_col()
     geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)
 
 
@@ -126,6 +139,7 @@ class BathingWater(Base):
     quality_rating: Mapped[str | None] = mapped_column(String(128))
     catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
     district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    attrs: Mapped[dict] = _attrs_col()
     geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)
 
 
@@ -138,6 +152,7 @@ class Toilet(Base):
     facility_type: Mapped[str | None] = mapped_column(String(128))
     catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
     district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    attrs: Mapped[dict] = _attrs_col()
     geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)
 
 
@@ -150,6 +165,7 @@ class Playground(Base):
     space_type: Mapped[str | None] = mapped_column(String(128))
     catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
     district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    attrs: Mapped[dict] = _attrs_col()
     geom = mapped_column(Geometry(geometry_type="MULTIPOLYGON", srid=25833), nullable=False)
 
 
@@ -162,4 +178,70 @@ class SportsFacility(Base):
     facility_type: Mapped[str | None] = mapped_column(String(128))
     catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
     district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    attrs: Mapped[dict] = _attrs_col()
+    geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)
+
+
+class Kita(Base):
+    __tablename__ = "kitas"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[str | None] = mapped_column(String(128))
+    name: Mapped[str | None] = mapped_column(String(255))
+    facility_type: Mapped[str | None] = mapped_column(String(128))
+    catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
+    district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    attrs: Mapped[dict] = _attrs_col()
+    geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)
+
+
+class Hospital(Base):
+    __tablename__ = "hospitals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[str | None] = mapped_column(String(128))
+    name: Mapped[str | None] = mapped_column(String(255))
+    hospital_type: Mapped[str | None] = mapped_column(String(128))
+    catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
+    district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    attrs: Mapped[dict] = _attrs_col()
+    geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)
+
+
+class Cemetery(Base):
+    __tablename__ = "cemeteries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[str | None] = mapped_column(String(128))
+    name: Mapped[str | None] = mapped_column(String(255))
+    denomination: Mapped[str | None] = mapped_column(String(128))
+    catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
+    district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    attrs: Mapped[dict] = _attrs_col()
+    geom = mapped_column(Geometry(geometry_type="MULTIPOLYGON", srid=25833), nullable=False)
+
+
+class ParkAndRide(Base):
+    __tablename__ = "park_and_ride"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[str | None] = mapped_column(String(128))
+    name: Mapped[str | None] = mapped_column(String(255))
+    facility_type: Mapped[str | None] = mapped_column(String(128))
+    catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
+    district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    attrs: Mapped[dict] = _attrs_col()
+    geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)
+
+
+class ParkTree(Base):
+    __tablename__ = "park_trees"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[str | None] = mapped_column(String(128))
+    name: Mapped[str | None] = mapped_column(String(255))
+    species: Mapped[str | None] = mapped_column(String(128))
+    catalog_id: Mapped[int] = mapped_column(ForeignKey("dataset_catalog.id"), nullable=False)
+    district_id: Mapped[int | None] = mapped_column(ForeignKey("districts.id"))
+    attrs: Mapped[dict] = _attrs_col()
     geom = mapped_column(Geometry(geometry_type="POINT", srid=25833), nullable=False)

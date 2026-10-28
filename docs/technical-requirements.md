@@ -6,7 +6,7 @@
 
 ## Data layer
 
-- Tables: `districts`, `neighborhoods`, `green_spaces`, `schools`, `trees`, `bike_parking`, `ev_chargers`, `drinking_fountains`, `bathing_waters`, `toilets`, `playgrounds`, `sports_facilities`, `dataset_catalog`.
+- Tables: `districts`, `neighborhoods`, `green_spaces`, `cemeteries`, `schools`, `kitas`, `hospitals`, `trees`, `park_trees`, `bike_parking`, `ev_chargers`, `drinking_fountains`, `bathing_waters`, `toilets`, `playgrounds`, `sports_facilities`, `park_and_ride`, `dataset_catalog`.
 - GiST on facility geoms (EPSG:25833).
 - Imports transactional; `--layers` can skip heavy layers (e.g. trees) for smoke runs.
 - Parameterized SQL only.

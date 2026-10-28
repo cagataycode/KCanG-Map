@@ -16,66 +16,20 @@ import {
   padBbox,
 } from "./api";
 import { PATTERNS, SCHEMA_TABLES, SchemaTable } from "./exercises";
+import {
+  LAYERS,
+  LayerSlug,
+  SourceStyle,
+  TREES_MAX_BBOX_SPAN,
+  TREES_MIN_ZOOM,
+  ZOOM_GATED_LAYERS,
+  buildSourceStyle,
+  isZoomGated,
+  layerDef,
+  layerSingular,
+} from "./layers";
 
-type Visibility = {
-  districts: boolean;
-  neighborhoods: boolean;
-  green_spaces: boolean;
-  schools: boolean;
-  trees: boolean;
-  bike_parking: boolean;
-  ev_chargers: boolean;
-  drinking_fountains: boolean;
-  bathing_waters: boolean;
-  toilets: boolean;
-  playgrounds: boolean;
-  sports_facilities: boolean;
-};
-
-const LAYER_META: Record<
-  keyof Visibility,
-  { label: string; swatch: string; kind: "fill" | "dot" | "line" }
-> = {
-  districts: { label: "Districts", swatch: "#1f4e79", kind: "line" },
-  neighborhoods: { label: "Neighborhoods", swatch: "#9bb0bf", kind: "line" },
-  green_spaces: { label: "Parks", swatch: "#1f8a5b", kind: "fill" },
-  playgrounds: { label: "Playgrounds", swatch: "#c4a035", kind: "fill" },
-  schools: { label: "Schools", swatch: "#c45c26", kind: "dot" },
-  trees: { label: "Street trees", swatch: "#2f6b3c", kind: "dot" },
-  bike_parking: { label: "Bike parking", swatch: "#0f6a5a", kind: "dot" },
-  ev_chargers: { label: "EV chargers", swatch: "#1a6fbf", kind: "dot" },
-  drinking_fountains: { label: "Drinking fountains", swatch: "#3a7ca5", kind: "dot" },
-  bathing_waters: { label: "Bathing waters", swatch: "#0b6e99", kind: "dot" },
-  toilets: { label: "Public toilets", swatch: "#6b5b7a", kind: "dot" },
-  sports_facilities: { label: "Sports facilities", swatch: "#b33b3b", kind: "dot" },
-};
-
-const LAYER_LABELS: Record<string, string> = {
-  trees: "Street tree",
-  bike_parking: "Bike parking",
-  ev_chargers: "EV charger",
-  drinking_fountains: "Drinking fountain",
-  bathing_waters: "Bathing water",
-  toilets: "Public toilet",
-  playgrounds: "Playground",
-  sports_facilities: "Sports facility",
-  green_spaces: "Park",
-};
-
-const LAYER_SQL_REF: Partial<Record<keyof Visibility, string>> = {
-  districts: "districts_geojson.sql",
-  neighborhoods: "neighborhoods_geojson.sql",
-  green_spaces: "green_spaces_geojson.sql",
-  schools: "schools_geojson.sql",
-  trees: "trees_geojson.sql",
-  bike_parking: "bike_parking_geojson.sql",
-  ev_chargers: "ev_chargers_geojson.sql",
-  drinking_fountains: "drinking_fountains_geojson.sql",
-  bathing_waters: "bathing_waters_geojson.sql",
-  toilets: "toilets_geojson.sql",
-  playgrounds: "playgrounds_geojson.sql",
-  sports_facilities: "sports_facilities_geojson.sql",
-};
+type Visibility = Record<LayerSlug, boolean>;
 
 type TaskTab = "nearby" | "compare" | "query";
 
@@ -88,6 +42,11 @@ type CompareMeasure =
   | "sports_facilities"
   | "bathing_waters"
   | "trees"
+  | "park_trees"
+  | "kitas"
+  | "hospitals"
+  | "cemeteries"
+  | "park_and_ride"
   | "green_pct"
   | "school_park";
 
@@ -99,13 +58,18 @@ const COMPARE_MEASURES: Array<{ id: CompareMeasure; label: string }> = [
   { id: "playgrounds", label: "Playgrounds" },
   { id: "sports_facilities", label: "Sports" },
   { id: "bathing_waters", label: "Bathing" },
-  { id: "trees", label: "Trees" },
+  { id: "trees", label: "Street trees" },
+  { id: "park_trees", label: "Park trees" },
+  { id: "kitas", label: "Daycare" },
+  { id: "hospitals", label: "Hospitals" },
+  { id: "cemeteries", label: "Cemeteries" },
+  { id: "park_and_ride", label: "Park & Ride" },
   { id: "green_pct", label: "Green cover %" },
   { id: "school_park", label: "School–park median" },
 ];
 
 /** Layers to enable when pinning a Compare measure's SQL. */
-const COMPARE_MEASURE_LAYERS: Record<CompareMeasure, (keyof Visibility)[]> = {
+const COMPARE_MEASURE_LAYERS: Record<CompareMeasure, LayerSlug[]> = {
   bike_parking: ["districts", "bike_parking"],
   ev_chargers: ["districts", "ev_chargers"],
   drinking_fountains: ["districts", "drinking_fountains"],
@@ -114,53 +78,28 @@ const COMPARE_MEASURE_LAYERS: Record<CompareMeasure, (keyof Visibility)[]> = {
   sports_facilities: ["districts", "sports_facilities"],
   bathing_waters: ["districts", "bathing_waters"],
   trees: ["districts", "trees"],
+  park_trees: ["districts", "park_trees"],
+  kitas: ["districts", "kitas"],
+  hospitals: ["districts", "hospitals"],
+  cemeteries: ["districts", "cemeteries"],
+  park_and_ride: ["districts", "park_and_ride"],
   green_pct: ["districts", "green_spaces"],
   school_park: ["districts", "schools", "green_spaces"],
 };
 
-const SQL_TO_LAYER_SLUG: Record<string, string> = {
-  "districts_geojson.sql": "districts",
-  "neighborhoods_geojson.sql": "neighborhoods",
-  "green_spaces_geojson.sql": "green_spaces",
-  "schools_geojson.sql": "schools",
-  "trees_geojson.sql": "trees",
-  "bike_parking_geojson.sql": "bike_parking",
-  "ev_chargers_geojson.sql": "ev_chargers",
-  "drinking_fountains_geojson.sql": "drinking_fountains",
-  "bathing_waters_geojson.sql": "bathing_waters",
-  "toilets_geojson.sql": "toilets",
-  "playgrounds_geojson.sql": "playgrounds",
-  "sports_facilities_geojson.sql": "sports_facilities",
-};
-
-/** Table name in SQL → layer checkbox key. */
-const TABLE_TO_LAYER: Record<string, keyof Visibility> = {
-  districts: "districts",
-  neighborhoods: "neighborhoods",
-  green_spaces: "green_spaces",
-  schools: "schools",
-  trees: "trees",
-  bike_parking: "bike_parking",
-  ev_chargers: "ev_chargers",
-  drinking_fountains: "drinking_fountains",
-  bathing_waters: "bathing_waters",
-  toilets: "toilets",
-  playgrounds: "playgrounds",
-  sports_facilities: "sports_facilities",
-};
-
-function layersFromSql(sql: string): Set<keyof Visibility> {
-  const found = new Set<keyof Visibility>();
+/** Table names in SQL match layer slugs — word-boundary match finds mentioned layers. */
+function layersFromSql(sql: string): Set<LayerSlug> {
+  const found = new Set<LayerSlug>();
   const lower = sql.toLowerCase();
-  for (const [table, key] of Object.entries(TABLE_TO_LAYER)) {
-    if (new RegExp(`\\b${table}\\b`).test(lower)) found.add(key);
+  for (const slug of Object.keys(LAYERS) as LayerSlug[]) {
+    if (new RegExp(`\\b${slug}\\b`).test(lower)) found.add(slug);
   }
   return found;
 }
 
 const EMPTY_FC: FeatureCollection = { type: "FeatureCollection", features: [] };
 
-type LayerCounts = Partial<Record<keyof Visibility, number>>;
+type LayerCounts = Partial<Record<LayerSlug, number>>;
 
 const BERLIN_CENTER: [number, number] = [13.405, 52.52];
 /** Soft pan limit — gray mask uses real borough polygons; this stops world wandering. */
@@ -169,8 +108,49 @@ const BERLIN_MAX_BOUNDS: LngLatBoundsLike = [
   [13.85, 52.75],
 ];
 const BBOX_PAD = 0.6;
+/** Tighter pad for half-million-row tree layers — wide pads become citywide dumps. */
+const TREES_BBOX_PAD = 0.15;
 const MOVE_DEBOUNCE_MS = 250;
-const TREES_MIN_ZOOM = 14;
+/** Default radius (metres) for :threshold_m binds. */
+const DEFAULT_THRESHOLD_M = 500;
+
+/** Map add order: fills first, then dots, then lines — district outlines stay on top. */
+const LAYER_ADD_ORDER: LayerSlug[] = [
+  "green_spaces",
+  "cemeteries",
+  "playgrounds",
+  "schools",
+  "kitas",
+  "hospitals",
+  "trees",
+  "park_trees",
+  "bike_parking",
+  "ev_chargers",
+  "drinking_fountains",
+  "bathing_waters",
+  "toilets",
+  "sports_facilities",
+  "park_and_ride",
+  "neighborhoods",
+  "districts",
+];
+
+/** Layers named in the post-load status line. */
+const STATUS_LAYERS: LayerSlug[] = [
+  "green_spaces",
+  "cemeteries",
+  "playgrounds",
+  "bike_parking",
+  "ev_chargers",
+  "drinking_fountains",
+  "toilets",
+  "sports_facilities",
+  "kitas",
+  "hospitals",
+  "park_and_ride",
+  "trees",
+  "park_trees",
+];
 
 const WORLD_RING: [number, number][] = [
   [-180, -85],
@@ -207,8 +187,6 @@ const ANALYSIS_TITLES: Record<string, string> = {
 };
 
 function titleForSqlFile(name: string): string {
-  const slug = SQL_TO_LAYER_SLUG[name];
-  if (slug && slug in LAYER_META) return LAYER_META[slug as keyof Visibility].label;
   return ANALYSIS_TITLES[name] ?? name;
 }
 
@@ -316,18 +294,27 @@ function ensureBerlinMask(map: Map, districts: FeatureCollection) {
   }
 }
 
-function zoomCirclePaint(color: string, opts?: { low?: number; mid?: number; high?: number; opacity?: number }) {
-  const low = opts?.low ?? 1.8;
-  const mid = opts?.mid ?? 3.5;
-  const high = opts?.high ?? 6;
-  const opacity = opts?.opacity ?? 0.8;
-  return {
-    "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, low, 13, mid, 16, high] as never,
-    "circle-color": color,
-    "circle-stroke-width": 0.7,
-    "circle-stroke-color": "#fff",
-    "circle-opacity": ["interpolate", ["linear"], ["zoom"], 9, opacity * 0.55, 13, opacity] as never,
-  };
+/**
+ * Sync checkbox state to map layer visibility. Trees stay gated by zoom.
+ * dimAmenities hides inventory layers while a query overlay owns their geometry.
+ */
+function applyLayerVisibility(map: Map, vis: Visibility, dimAmenities = false) {
+  (Object.keys(vis) as LayerSlug[]).forEach((key) => {
+    let visible = vis[key];
+    if (isZoomGated(key) && visible && map.getZoom() < TREES_MIN_ZOOM) {
+      visible = false;
+    }
+    if (dimAmenities && key !== "districts" && key !== "neighborhoods") {
+      visible = false;
+    }
+    const value = visible ? "visible" : "none";
+    for (const suffix of ["-layer", "-outline", "-line", "-label"]) {
+      const layerId = `${key}${suffix}`;
+      if (map.getLayer(layerId)) {
+        map.setLayoutProperty(layerId, "visibility", value);
+      }
+    }
+  });
 }
 
 export default function App() {
@@ -338,7 +325,8 @@ export default function App() {
   const loadedDistrictRef = useRef<number | "">("");
   const loadSeqRef = useRef(0);
   const densityLoadedRef = useRef(false);
-  const treesLoadedRef = useRef(false);
+  /** Which zoom-gated layers currently have fetched data. */
+  const zoomGatedLoadedRef = useRef<Record<string, boolean>>({});
   const treesZoomOkRef = useRef(false);
 
   const [layers, setLayers] = useState<LayerMeta[]>([]);
@@ -348,8 +336,12 @@ export default function App() {
     districts: true,
     neighborhoods: false,
     green_spaces: false,
+    cemeteries: false,
     schools: false,
+    kitas: false,
+    hospitals: false,
     trees: false,
+    park_trees: false,
     bike_parking: true,
     ev_chargers: true,
     drinking_fountains: true,
@@ -357,6 +349,7 @@ export default function App() {
     toilets: false,
     playgrounds: false,
     sports_facilities: false,
+    park_and_ride: false,
   });
   const visibilityRef = useRef(visibility);
   visibilityRef.current = visibility;
@@ -397,7 +390,7 @@ export default function App() {
   taskTabRef.current = taskTab;
 
   const treesZoomOk = mapZoom >= TREES_MIN_ZOOM;
-  const treesNeedZoom = visibility.trees && !treesZoomOk;
+  // Chip hint uses zoom only; actual fetch also checks viewport span.
   const selectedDistrictName =
     selectedDistrict === ""
       ? null
@@ -509,7 +502,7 @@ export default function App() {
         const closest = result.nearest?.[0];
         setStatus(
           closest
-            ? `Nearest: ${LAYER_LABELS[closest.layer] ?? closest.layer} at ${closest.distance_m.toFixed(0)} m`
+            ? `Nearest: ${layerSingular(closest.layer) ?? closest.layer} at ${closest.distance_m.toFixed(0)} m`
             : "No amenities loaded yet — run the import script"
         );
       } catch (err) {
@@ -548,33 +541,32 @@ export default function App() {
     const map = mapRef.current;
     if (!map) return;
 
-    const applyVisibility = () => {
-      (Object.keys(visibilityRef.current) as (keyof Visibility)[]).forEach((key) => {
-        let visible = visibilityRef.current[key];
-        if (key === "trees" && visible && map.getZoom() < TREES_MIN_ZOOM) {
-          visible = false;
-        }
-        const value = visible ? "visible" : "none";
-        for (const suffix of ["-layer", "-outline", "-line", "-label"]) {
-          const layerId = `${key}${suffix}`;
-          if (map.getLayer(layerId)) {
-            map.setLayoutProperty(layerId, "visibility", value);
-          }
-        }
-      });
-    };
-
     const loadLayers = async (force: boolean) => {
       const districtId = selectedDistrict === "" ? undefined : selectedDistrict;
       const viewport = boundsToBbox(map.getBounds());
       const zoomOk = map.getZoom() >= TREES_MIN_ZOOM;
-      const wantTrees = visibilityRef.current.trees && zoomOk;
+      const viewportSpanOk =
+        viewport[2] - viewport[0] <= TREES_MAX_BBOX_SPAN &&
+        viewport[3] - viewport[1] <= TREES_MAX_BBOX_SPAN;
+      const treesOk = zoomOk && (districtId != null || viewportSpanOk);
+      const wantZoomGated = Object.fromEntries(
+        ZOOM_GATED_LAYERS.map((slug) => [
+          slug,
+          Boolean(visibilityRef.current[slug] && treesOk),
+        ])
+      ) as Record<string, boolean>;
+      const gatedFingerprint = ZOOM_GATED_LAYERS.map(
+        (slug) => `${slug}:${wantZoomGated[slug] ? 1 : 0}`
+      ).join(",");
+      const loadedFingerprint = ZOOM_GATED_LAYERS.map(
+        (slug) => `${slug}:${zoomGatedLoadedRef.current[slug] ? 1 : 0}`
+      ).join(",");
 
       if (districtId != null) {
         if (
           !force &&
           loadedDistrictRef.current === selectedDistrict &&
-          treesLoadedRef.current === wantTrees
+          gatedFingerprint === loadedFingerprint
         ) {
           return;
         }
@@ -583,7 +575,7 @@ export default function App() {
           !force &&
           loadedExtentRef.current &&
           bboxContains(loadedExtentRef.current, viewport) &&
-          treesLoadedRef.current === wantTrees
+          gatedFingerprint === loadedFingerprint
         ) {
           return;
         }
@@ -591,42 +583,30 @@ export default function App() {
 
       const fetchBbox =
         districtId != null ? undefined : formatBbox(padBbox(viewport, BBOX_PAD));
+      const treesFetchBbox =
+        districtId != null
+          ? undefined
+          : formatBbox(padBbox(viewport, TREES_BBOX_PAD));
       const extentToStore =
         districtId != null ? null : padBbox(viewport, BBOX_PAD);
 
       const seq = ++loadSeqRef.current;
+      const slugs = Object.keys(LAYERS) as LayerSlug[];
       try {
         setLayerError(null);
         setStatus("Loading layers…");
 
-        const [
-          districtFc,
-          neighborhoodFc,
-          greenFc,
-          playgroundFc,
-          schoolFc,
-          treeFc,
-          bikeFc,
-          evFc,
-          fountainFc,
-          bathingFc,
-          toiletFc,
-          sportsFc,
-          dens,
-          green,
-        ] = await Promise.all([
-          api.districts(),
-          api.neighborhoods(),
-          api.greenSpaces(fetchBbox, districtId),
-          api.playgrounds(fetchBbox, districtId),
-          api.schools(fetchBbox, districtId),
-          wantTrees ? api.trees(fetchBbox, districtId) : Promise.resolve(EMPTY_FC),
-          api.bikeParking(fetchBbox, districtId),
-          api.evChargers(fetchBbox, districtId),
-          api.drinkingFountains(fetchBbox, districtId),
-          api.bathingWaters(fetchBbox, districtId),
-          api.toilets(fetchBbox, districtId),
-          api.sportsFacilities(fetchBbox, districtId),
+        const [featureCollections, dens, green] = await Promise.all([
+          Promise.all(
+            slugs.map((slug) => {
+              if (isZoomGated(slug) && !wantZoomGated[slug]) {
+                return Promise.resolve(EMPTY_FC);
+              }
+              if (layerDef(slug).citywide) return api.layer(slug);
+              const bbox = isZoomGated(slug) ? treesFetchBbox : fetchBbox;
+              return api.layer(slug, bbox, districtId);
+            })
+          ),
           densityLoadedRef.current
             ? Promise.resolve(null as AnalysisResponse | null)
             : api.amenityDensityByBorough(),
@@ -637,110 +617,33 @@ export default function App() {
 
         if (seq !== loadSeqRef.current) return;
 
+        const data = {} as Record<LayerSlug, FeatureCollection>;
+        slugs.forEach((slug, i) => {
+          data[slug] = featureCollections[i];
+        });
+
         if (dens) {
           setDensity(dens);
           densityLoadedRef.current = true;
         }
         if (green) setGreenBorough(green);
 
-        setLayerCounts((prev) => ({
-          ...prev,
-          districts: districtFc.features.length,
-          neighborhoods: neighborhoodFc.features.length,
-          green_spaces: greenFc.features.length,
-          playgrounds: playgroundFc.features.length,
-          schools: schoolFc.features.length,
-          ...(wantTrees ? { trees: treeFc.features.length } : {}),
-          bike_parking: bikeFc.features.length,
-          ev_chargers: evFc.features.length,
-          drinking_fountains: fountainFc.features.length,
-          bathing_waters: bathingFc.features.length,
-          toilets: toiletFc.features.length,
-          sports_facilities: sportsFc.features.length,
-        }));
+        setLayerCounts((prev) => {
+          const next: LayerCounts = { ...prev };
+          for (const slug of slugs) {
+            if (isZoomGated(slug) && !wantZoomGated[slug]) continue;
+            next[slug] = data[slug].features.length;
+          }
+          return next;
+        });
 
-        ensureBerlinMask(map, districtFc);
+        ensureBerlinMask(map, data.districts);
 
         // Parks/fills first; borough outlines added last so they stay readable on top.
-        ensureSource(map, "green_spaces", greenFc, {
-          type: "fill",
-          paint: {
-            "fill-color": "#2f855a",
-            "fill-opacity": 0.18,
-          },
-          outline: {
-            "line-color": "#276749",
-            "line-width": 0.8,
-            "line-opacity": 0.45,
-          },
-        });
-        ensureSource(map, "playgrounds", playgroundFc, {
-          type: "fill",
-          paint: {
-            "fill-color": "#c4a035",
-            "fill-opacity": 0.35,
-          },
-          outline: {
-            "line-color": "#8a7020",
-            "line-width": 0.9,
-            "line-opacity": 0.7,
-          },
-        });
-        ensureSource(map, "schools", schoolFc, {
-          type: "circle",
-          paint: zoomCirclePaint("#c45c26", { low: 2, mid: 3.5, high: 6.5, opacity: 0.85 }),
-        });
-        ensureSource(map, "trees", treeFc, {
-          type: "circle",
-          paint: {
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 14, 2, 17, 4.5] as never,
-            "circle-color": "#2f6b3c",
-            "circle-stroke-width": 0,
-            "circle-opacity": 0.55,
-          },
-          minzoom: TREES_MIN_ZOOM,
-        });
-        ensureSource(map, "bike_parking", bikeFc, {
-          type: "circle",
-          paint: zoomCirclePaint("#0f6a5a"),
-        });
-        ensureSource(map, "ev_chargers", evFc, {
-          type: "circle",
-          paint: zoomCirclePaint("#1a6fbf"),
-        });
-        ensureSource(map, "drinking_fountains", fountainFc, {
-          type: "circle",
-          paint: zoomCirclePaint("#3a7ca5", { low: 2.2, mid: 4, high: 7, opacity: 0.88 }),
-        });
-        ensureSource(map, "bathing_waters", bathingFc, {
-          type: "circle",
-          paint: zoomCirclePaint("#0b6e99", { low: 3, mid: 5, high: 8, opacity: 0.92 }),
-        });
-        ensureSource(map, "toilets", toiletFc, {
-          type: "circle",
-          paint: zoomCirclePaint("#6b5b7a"),
-        });
-        ensureSource(map, "sports_facilities", sportsFc, {
-          type: "circle",
-          paint: zoomCirclePaint("#b33b3b"),
-        });
-        ensureSource(map, "neighborhoods", neighborhoodFc, {
-          type: "line",
-          paint: {
-            "line-color": "#9bb0bf",
-            "line-width": ["interpolate", ["linear"], ["zoom"], 9, 1.8, 13, 3.2] as never,
-            "line-opacity": 0.85,
-          },
-        });
-        ensureNeighborhoodLabels(map);
-        ensureSource(map, "districts", districtFc, {
-          type: "line",
-          paint: {
-            "line-color": "#102a43",
-            "line-width": ["interpolate", ["linear"], ["zoom"], 9, 2.4, 13, 4] as never,
-            "line-opacity": 0.95,
-          },
-        });
+        for (const slug of LAYER_ADD_ORDER) {
+          ensureSource(map, slug, data[slug], buildSourceStyle(slug));
+          if (slug === "neighborhoods") ensureNeighborhoodLabels(map);
+        }
         if (map.getLayer("berlin_mask-layer") && map.getLayer("neighborhoods-line")) {
           map.moveLayer("berlin_mask-layer", "neighborhoods-line");
         }
@@ -754,17 +657,16 @@ export default function App() {
           map.moveLayer("districts-line");
         }
 
-        applyVisibility();
+        applyLayerVisibility(map, visibilityRef.current);
         loadedExtentRef.current = extentToStore;
         loadedDistrictRef.current = selectedDistrict;
-        treesLoadedRef.current = wantTrees;
+        zoomGatedLoadedRef.current = { ...wantZoomGated };
         treesZoomOkRef.current = zoomOk;
 
         setStatus(
-          `Loaded parks ${greenFc.features.length}, playgrounds ${playgroundFc.features.length}, ` +
-            `bikes ${bikeFc.features.length}, EV ${evFc.features.length}, ` +
-            `fountains ${fountainFc.features.length}, toilets ${toiletFc.features.length}, ` +
-            `sports ${sportsFc.features.length}, trees ${treeFc.features.length}`
+          `Loaded ${STATUS_LAYERS.map(
+            (slug) => `${LAYERS[slug].label} ${data[slug].features.length}`
+          ).join(", ")}`
         );
       } catch (err) {
         if (seq !== loadSeqRef.current) return;
@@ -783,9 +685,13 @@ export default function App() {
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const onMoveEnd = () => {
       if (selectedDistrict !== "") {
-        // Still re-check trees zoom gate while focused on a borough.
+        // Still re-check zoom-gated layers while focused on a borough.
         const zoomOk = map.getZoom() >= TREES_MIN_ZOOM;
-        if (visibilityRef.current.trees && zoomOk !== treesZoomOkRef.current) {
+        const anyVisibleGated = ZOOM_GATED_LAYERS.some(
+          (slug) => visibilityRef.current[slug]
+        );
+        // Borough filter skips bbox span checks — zoom alone gates fetch.
+        if (anyVisibleGated && zoomOk !== treesZoomOkRef.current) {
           void loadLayers(true);
         }
         return;
@@ -808,34 +714,32 @@ export default function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    // Query overlay owns amenity geometry — dim inventory layers underneath so points aren't doubled.
     const overlayActive = Boolean(showQueryOnMap && sqlRun?.geojson?.features?.length);
-    (Object.keys(visibility) as (keyof Visibility)[]).forEach((key) => {
-      let visible = visibility[key];
-      if (key === "trees" && visible && map.getZoom() < TREES_MIN_ZOOM) {
-        visible = false;
-      }
-      // Query overlay owns amenity geometry — hide inventory layers underneath so points aren't doubled.
-      if (overlayActive && key !== "districts" && key !== "neighborhoods") {
-        visible = false;
-      }
-      const value = visible ? "visible" : "none";
-      for (const suffix of ["-layer", "-outline", "-line", "-label"]) {
-        const layerId = `${key}${suffix}`;
-        if (map.getLayer(layerId)) {
-          map.setLayoutProperty(layerId, "visibility", value);
-        }
-      }
-    });
-    // Turning trees on at sufficient zoom should fetch them.
-    if (visibility.trees && map.getZoom() >= TREES_MIN_ZOOM && !treesLoadedRef.current) {
+    applyLayerVisibility(map, visibility, overlayActive);
+    // Turning a zoom-gated layer on at sufficient zoom/span should fetch it.
+    const vp = boundsToBbox(map.getBounds());
+    const spanOk =
+      selectedDistrict !== "" ||
+      (vp[2] - vp[0] <= TREES_MAX_BBOX_SPAN && vp[3] - vp[1] <= TREES_MAX_BBOX_SPAN);
+    const needsFetch = ZOOM_GATED_LAYERS.some(
+      (slug) =>
+        visibility[slug] &&
+        map.getZoom() >= TREES_MIN_ZOOM &&
+        spanOk &&
+        !zoomGatedLoadedRef.current[slug]
+    );
+    if (needsFetch) {
       loadedExtentRef.current = null;
       loadedDistrictRef.current = "";
       map.fire("moveend");
     }
-    if (!visibility.trees && treesLoadedRef.current) {
-      const src = map.getSource("trees") as maplibregl.GeoJSONSource | undefined;
-      src?.setData(EMPTY_FC as never);
-      treesLoadedRef.current = false;
+    for (const slug of ZOOM_GATED_LAYERS) {
+      if (!visibility[slug] && zoomGatedLoadedRef.current[slug]) {
+        const src = map.getSource(slug) as maplibregl.GeoJSONSource | undefined;
+        src?.setData(EMPTY_FC as never);
+        zoomGatedLoadedRef.current[slug] = false;
+      }
     }
   }, [visibility, mapZoom, showQueryOnMap, sqlRun]);
 
@@ -845,7 +749,7 @@ export default function App() {
     if (showQueryOnMap && sqlRun?.geojson) {
       ensureUserQueryOverlay(map, sqlRun.geojson);
     } else {
-      for (const id of ["user_query-fill", "user_query-outline", "user_query-circle", "user_query-line"]) {
+      for (const id of ["user_query-fill", "user_query-outline", "user_query-circle"]) {
         if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", "none");
       }
     }
@@ -892,7 +796,7 @@ export default function App() {
       lon: lastClick?.lon ?? (center ? Number(center.lng.toFixed(5)) : BERLIN_CENTER[0]),
       lat: lastClick?.lat ?? (center ? Number(center.lat.toFixed(5)) : BERLIN_CENTER[1]),
       district_id: selectedDistrict === "" ? null : selectedDistrict,
-      threshold_m: 500,
+      threshold_m: DEFAULT_THRESHOLD_M,
     };
   };
 
@@ -902,7 +806,7 @@ export default function App() {
     if (mentioned.size > 0) {
       setVisibility((prev) => {
         const next = { ...prev };
-        for (const key of Object.keys(LAYER_META) as (keyof Visibility)[]) {
+        for (const key of Object.keys(LAYERS) as LayerSlug[]) {
           next[key] = mentioned.has(key);
         }
         return next;
@@ -987,8 +891,17 @@ export default function App() {
   };
 
   const openReferenceFile = async () => {
-    if (!activePattern?.refFile) return;
+    if (!activePattern) return;
     try {
+      if (activePattern.refLayer) {
+        const file = await api.layerSql(activePattern.refLayer);
+        applyDocument(
+          makeDoc(LAYERS[activePattern.refLayer].label, file.sql, { filename: file.name }),
+          null
+        );
+        return;
+      }
+      if (!activePattern.refFile) return;
       const file = await api.sqlFile(activePattern.refFile);
       applyDocument(makeDoc(titleForSqlFile(file.name), file.sql, { filename: file.name }), null);
     } catch (err) {
@@ -996,16 +909,14 @@ export default function App() {
     }
   };
 
-  const inspectLayerSql = async (key: keyof Visibility) => {
-    const name = LAYER_SQL_REF[key];
-    if (!name) return;
+  const inspectLayerSql = async (key: LayerSlug) => {
     try {
       setLayerError(null);
-      const file = await api.sqlFile(name);
+      const file = await api.layerSql(key);
       const catalog = layers.find((l) => l.slug === key);
       setVisibility((v) => ({ ...v, [key]: true }));
       requestReplace(
-        makeDoc(LAYER_META[key].label, file.sql, {
+        makeDoc(LAYERS[key].label, file.sql, {
           filename: file.name,
           caveat: catalog?.coverage_caveat,
         })
@@ -1074,9 +985,9 @@ export default function App() {
     }
   };
 
-  const visibleLegendKeys = (Object.keys(LAYER_META) as (keyof Visibility)[]).filter((key) => {
+  const visibleLegendKeys = (Object.keys(LAYERS) as LayerSlug[]).filter((key) => {
     if (!visibility[key]) return false;
-    if (key === "trees" && !treesZoomOk) return false;
+    if (isZoomGated(key) && !treesZoomOk) return false;
     return true;
   });
 
@@ -1100,9 +1011,9 @@ export default function App() {
             </button>
           </div>
           <div className="layer-grid" role="group" aria-label="Layers">
-            {(Object.keys(LAYER_META) as (keyof Visibility)[]).map((key) => {
+            {(Object.keys(LAYERS) as LayerSlug[]).map((key) => {
               const count = layerCounts[key];
-              const waitingTrees = key === "trees" && treesNeedZoom;
+              const waitingZoom = isZoomGated(key) && visibility[key] && !treesZoomOk;
               const on = visibility[key];
               return (
                 <div key={key} className={`layer-chip${on ? " layer-chip-on" : ""}`}>
@@ -1110,30 +1021,28 @@ export default function App() {
                     type="button"
                     className="layer-chip-toggle"
                     aria-pressed={on}
-                    title={waitingTrees ? `Zoom to ${TREES_MIN_ZOOM}` : LAYER_META[key].label}
+                    title={waitingZoom ? `Zoom to ${TREES_MIN_ZOOM}` : LAYERS[key].label}
                     onClick={() => setVisibility((v) => ({ ...v, [key]: !v[key] }))}
                   >
                     <span
-                      className={`swatch swatch-${LAYER_META[key].kind}`}
-                      style={{ background: LAYER_META[key].swatch }}
+                      className={`swatch swatch-${LAYERS[key].kind}`}
+                      style={{ background: LAYERS[key].swatch }}
                     />
-                    <span className="layer-chip-label">{LAYER_META[key].label}</span>
-                    {waitingTrees ? (
+                    <span className="layer-chip-label">{LAYERS[key].label}</span>
+                    {waitingZoom ? (
                       <span className="layer-count">z{TREES_MIN_ZOOM}</span>
                     ) : count != null ? (
                       <span className="layer-count">{count}</span>
                     ) : null}
                   </button>
-                  {LAYER_SQL_REF[key] && (
-                    <button
-                      type="button"
-                      className="layer-chip-sql"
-                      title={`Open ${key} SQL`}
-                      onClick={() => void inspectLayerSql(key)}
-                    >
-                      SQL
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="layer-chip-sql"
+                    title={`Open ${key} SQL`}
+                    onClick={() => void inspectLayerSql(key)}
+                  >
+                    SQL
+                  </button>
                 </div>
               );
             })}
@@ -1191,7 +1100,7 @@ export default function App() {
                 schoolGreen={schoolGreen}
                 selectedDistrict={selectedDistrict}
                 onSelectBorough={selectBorough}
-                  onShowQuery={(doc) => {
+                onShowQuery={(doc) => {
                   const keys = COMPARE_MEASURE_LAYERS[compareMeasure];
                   setVisibility((v) => {
                     const next = { ...v };
@@ -1319,7 +1228,7 @@ export default function App() {
                   >
                     Explain
                   </button>
-                  {activePattern?.refFile && (
+                  {(activePattern?.refFile || activePattern?.refLayer) && (
                     <button
                       type="button"
                       className="secondary"
@@ -1385,13 +1294,13 @@ export default function App() {
             {visibleLegendKeys.map((key) => (
               <div className="legend-row" key={key}>
                 <span
-                  className={`swatch swatch-${LAYER_META[key].kind}`}
+                  className={`swatch swatch-${LAYERS[key].kind}`}
                   style={{
-                    background: LAYER_META[key].swatch,
-                    opacity: LAYER_META[key].kind === "fill" ? 0.7 : 1,
+                    background: LAYERS[key].swatch,
+                    opacity: LAYERS[key].kind === "fill" ? 0.7 : 1,
                   }}
                 />
-                {LAYER_META[key].label}
+                {LAYERS[key].label}
               </div>
             ))}
             {showQueryOnMap && sqlRun?.geojson?.features?.length ? (
@@ -1425,7 +1334,7 @@ function NearestPanel({
   onClear: () => void;
   onShowQuery?: () => void;
 }) {
-  const hits = [...(result.nearest ?? [])].sort((a, b) => a.distance_m - b.distance_m);
+  const hits = result.nearest ?? [];
   const maxDist = hits.length > 0 ? Math.max(...hits.map((h) => h.distance_m), 1) : 1;
 
   return (
@@ -1449,7 +1358,7 @@ function NearestPanel({
             <li key={`${n.layer}-${i}`}>
               <div className="hit-meta">
                 <span>
-                  {LAYER_LABELS[n.layer] ?? n.layer}
+                  {layerSingular(n.layer) ?? n.layer}
                   {n.name ? ` — ${n.name}` : ""}
                 </span>
                 <span className="hit-dist">{n.distance_m.toFixed(0)} m</span>
@@ -1773,13 +1682,6 @@ function ComparePanel({
     </div>
   );
 }
-
-type SourceStyle = {
-  type: "fill" | "circle" | "line";
-  paint: Record<string, unknown>;
-  outline?: Record<string, unknown>;
-  minzoom?: number;
-};
 
 function ensureNeighborhoodLabels(map: Map) {
   if (map.getLayer("neighborhoods-label") || !map.getSource("neighborhoods")) return;

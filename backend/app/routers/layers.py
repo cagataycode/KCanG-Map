@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,25 +9,18 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.layer_registry import (
+    LAYER_BY_SLUG,
+    LAYER_SQL_NAME,
+    LAYERS,
+    LayerDef,
+    MAX_FILTERED_BBOX_SPAN_DEG,
+    render_layer_sql,
+)
 from app.models import DatasetCatalog, District
 from app.sql_loader import load_sql
 
 router = APIRouter(tags=["layers"])
-
-LAYER_TABLES = {
-    "districts": "districts",
-    "neighborhoods": "neighborhoods",
-    "green_spaces": "green_spaces",
-    "schools": "schools",
-    "trees": "trees",
-    "bike_parking": "bike_parking",
-    "ev_chargers": "ev_chargers",
-    "drinking_fountains": "drinking_fountains",
-    "bathing_waters": "bathing_waters",
-    "toilets": "toilets",
-    "playgrounds": "playgrounds",
-    "sports_facilities": "sports_facilities",
-}
 
 
 @router.get("/layers")
@@ -50,115 +44,12 @@ def list_layers(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
     ]
 
 
-@router.get("/districts")
-def get_districts(
-    bbox: str | None = Query(None, description="minLon,minLat,maxLon,maxLat"),
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
-    return _geojson(db, "districts_geojson.sql", bbox=bbox)
-
-
-@router.get("/neighborhoods")
-def get_neighborhoods(
-    bbox: str | None = Query(None, description="minLon,minLat,maxLon,maxLat"),
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
-    return _geojson(db, "neighborhoods_geojson.sql", bbox=bbox)
-
-
-@router.get("/green-spaces")
-def get_green_spaces(
-    bbox: str | None = Query(None),
-    district_id: int | None = None,
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
-    return _geojson(db, "green_spaces_geojson.sql", bbox=bbox, district_id=district_id)
-
-
-@router.get("/schools")
-def get_schools(
-    bbox: str | None = Query(None),
-    district_id: int | None = None,
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
-    return _geojson(db, "schools_geojson.sql", bbox=bbox, district_id=district_id)
-
-
-@router.get("/trees")
-def get_trees(
-    bbox: str | None = Query(None),
-    district_id: int | None = None,
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
-    if bbox is None and district_id is None:
-        raise HTTPException(
-            status_code=400,
-            detail="trees requires bbox and/or district_id (citywide dump blocked)",
-        )
-    return _geojson(db, "trees_geojson.sql", bbox=bbox, district_id=district_id)
-
-
-@router.get("/bike-parking")
-def get_bike_parking(
-    bbox: str | None = Query(None),
-    district_id: int | None = None,
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
-    return _geojson(db, "bike_parking_geojson.sql", bbox=bbox, district_id=district_id)
-
-
-@router.get("/ev-chargers")
-def get_ev_chargers(
-    bbox: str | None = Query(None),
-    district_id: int | None = None,
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
-    return _geojson(db, "ev_chargers_geojson.sql", bbox=bbox, district_id=district_id)
-
-
-@router.get("/drinking-fountains")
-def get_drinking_fountains(
-    bbox: str | None = Query(None),
-    district_id: int | None = None,
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
-    return _geojson(db, "drinking_fountains_geojson.sql", bbox=bbox, district_id=district_id)
-
-
-@router.get("/bathing-waters")
-def get_bathing_waters(
-    bbox: str | None = Query(None),
-    district_id: int | None = None,
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
-    return _geojson(db, "bathing_waters_geojson.sql", bbox=bbox, district_id=district_id)
-
-
-@router.get("/toilets")
-def get_toilets(
-    bbox: str | None = Query(None),
-    district_id: int | None = None,
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
-    return _geojson(db, "toilets_geojson.sql", bbox=bbox, district_id=district_id)
-
-
-@router.get("/playgrounds")
-def get_playgrounds(
-    bbox: str | None = Query(None),
-    district_id: int | None = None,
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
-    return _geojson(db, "playgrounds_geojson.sql", bbox=bbox, district_id=district_id)
-
-
-@router.get("/sports-facilities")
-def get_sports_facilities(
-    bbox: str | None = Query(None),
-    district_id: int | None = None,
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
-    return _geojson(db, "sports_facilities_geojson.sql", bbox=bbox, district_id=district_id)
+@router.get("/layers/{slug}/sql")
+def get_layer_sql(slug: str) -> dict[str, str]:
+    layer = LAYER_BY_SLUG.get(slug)
+    if layer is None:
+        raise HTTPException(status_code=404, detail="Unknown layer")
+    return {"name": LAYER_SQL_NAME, "slug": layer.slug, "sql": render_layer_sql(layer)}
 
 
 @router.get("/districts/list")
@@ -167,12 +58,59 @@ def list_district_names(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
     return [{"id": d.id, "official_id": d.official_id, "name": d.name} for d in rows]
 
 
+def _reject_oversized_bbox(layer: LayerDef, bbox: str | None) -> None:
+    """Heavy inventories must stay tightly scoped — citywide padded bboxes time out."""
+    if not layer.requires_filter or not bbox:
+        return
+    parts = _parse_bbox(bbox)
+    minx, miny, maxx, maxy = parts["minx"], parts["miny"], parts["maxx"], parts["maxy"]
+    if None in (minx, miny, maxx, maxy):
+        return
+    span_x = float(maxx) - float(minx)
+    span_y = float(maxy) - float(miny)
+    if span_x > MAX_FILTERED_BBOX_SPAN_DEG or span_y > MAX_FILTERED_BBOX_SPAN_DEG:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{layer.slug} bbox too large "
+                f"(max {MAX_FILTERED_BBOX_SPAN_DEG}° span); zoom in further"
+            ),
+        )
+
+
+def _make_layer_endpoint(layer: LayerDef) -> Callable[..., dict[str, Any]]:
+    def get_layer_features(
+        bbox: str | None = Query(None, description="minLon,minLat,maxLon,maxLat"),
+        district_id: int | None = Query(None),
+        db: Session = Depends(get_db),
+    ) -> dict[str, Any]:
+        if layer.requires_filter and bbox is None and district_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{layer.slug} requires bbox and/or district_id (citywide dump blocked)",
+            )
+        _reject_oversized_bbox(layer, bbox)
+        return _geojson(db, layer, bbox=bbox, district_id=district_id)
+
+    get_layer_features.__name__ = f"get_{layer.slug}"
+    return get_layer_features
+
+
+for _layer in LAYERS:
+    router.add_api_route(
+        f"/{_layer.path}",
+        _make_layer_endpoint(_layer),
+        methods=["GET"],
+        name=f"get_{_layer.slug}",
+    )
+
+
 @router.get("/features/{layer}/{feature_id}")
 def get_feature(layer: str, feature_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
-    table = LAYER_TABLES.get(layer)
-    if not table:
+    layer_def = LAYER_BY_SLUG.get(layer)
+    if layer_def is None:
         raise HTTPException(status_code=404, detail="Unknown layer")
-    sql = load_sql("feature_by_id.sql").format(table=table)
+    sql = load_sql("feature_by_id.sql").format(table=layer_def.table)
     row = db.execute(text(sql), {"id": feature_id}).scalar()
     if row is None:
         raise HTTPException(status_code=404, detail="Feature not found")
@@ -185,18 +123,23 @@ def _parse_bbox(bbox: str | None) -> dict[str, float | None]:
     parts = [p.strip() for p in bbox.split(",")]
     if len(parts) != 4:
         raise HTTPException(status_code=400, detail="bbox must be minLon,minLat,maxLon,maxLat")
-    minx, miny, maxx, maxy = map(float, parts)
+    try:
+        minx, miny, maxx, maxy = (float(p) for p in parts)
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail="bbox must be numeric minLon,minLat,maxLon,maxLat"
+        ) from None
     return {"minx": minx, "miny": miny, "maxx": maxx, "maxy": maxy}
 
 
 def _geojson(
     db: Session,
-    sql_name: str,
+    layer: LayerDef,
     bbox: str | None = None,
     district_id: int | None = None,
 ) -> dict[str, Any]:
     params: dict[str, Any] = _parse_bbox(bbox)
-    sql = load_sql(sql_name)
+    sql = render_layer_sql(layer)
     if ":district_id" in sql:
         params["district_id"] = district_id
     row = db.execute(text(sql), params).scalar()
@@ -204,5 +147,5 @@ def _geojson(
         payload: dict[str, Any] = {"type": "FeatureCollection", "features": []}
     else:
         payload = row if isinstance(row, dict) else json.loads(row)
-    payload["sql_ref"] = sql_name
+    payload["sql_ref"] = LAYER_SQL_NAME
     return payload
