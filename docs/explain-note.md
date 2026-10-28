@@ -24,3 +24,4 @@ Schema relationships:
 
 - `dataset_catalog` 1:N feature tables (provenance once)
 - `districts` 1:N features via `district_id` assigned at import (`ST_Within` / point-on-surface)
+- Full source attributes live in `attrs` (jsonb) and are merged into GeoJSON properties
