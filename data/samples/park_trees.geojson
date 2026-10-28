@@ -1,0 +1,29 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "gisid": "pt1",
+        "art_dtsch": "Sommer-Linde",
+        "art_bot": "Tilia platyphyllos",
+        "namenr": "Monbijoupark",
+        "name": "Sommer-Linde",
+        "species": "Tilia platyphyllos"
+      },
+      "geometry": { "type": "Point", "coordinates": [13.395, 52.523] }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "gisid": "pt2",
+        "art_dtsch": "Platane",
+        "art_bot": "Platanus x hispanica",
+        "namenr": "Görlitzer Park",
+        "name": "Platane",
+        "species": "Platanus x hispanica"
+      },
+      "geometry": { "type": "Point", "coordinates": [13.438, 52.498] }
+    }
+  ]
+}

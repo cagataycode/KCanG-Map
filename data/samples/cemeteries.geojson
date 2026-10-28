@@ -1,0 +1,31 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "pitid": "c1",
+        "name": "Friedhof Sample Mitte",
+        "konfess": "Landeseigen",
+        "denomination": "Landeseigen"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[13.39, 52.53], [13.393, 52.53], [13.393, 52.532], [13.39, 52.532], [13.39, 52.53]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "pitid": "c2",
+        "name": "Friedhof Sample Süd",
+        "konfess": "Evangelisch",
+        "denomination": "Evangelisch"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[13.43, 52.49], [13.433, 52.49], [13.433, 52.492], [13.43, 52.492], [13.43, 52.49]]]
+      }
+    }
+  ]
+}

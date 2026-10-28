@@ -1,0 +1,15 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "e_nr": "k1", "e_name": "Kita Mitte A", "e_art": "Kita", "source_id": "k1", "name": "Kita Mitte A", "facility_type": "Kita" },
+      "geometry": { "type": "Point", "coordinates": [13.38, 52.524] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "e_nr": "k2", "e_name": "Kita Kreuzberg", "e_art": "Kita", "source_id": "k2", "name": "Kita Kreuzberg", "facility_type": "Kita" },
+      "geometry": { "type": "Point", "coordinates": [13.42, 52.50] }
+    }
+  ]
+}
